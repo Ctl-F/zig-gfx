@@ -293,27 +293,6 @@ pub const Shader = struct {
     }
 };
 
-pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
-    switch (@typeInfo(ty)) {
-        .Int => gl.glUniform1i(location, value),
-        .Float => gl.glUniform1f(location, value),
-        .Struct => |s| {
-            if (@TypeOf(value) == mat4) {
-                gl.glUniformMatrix4fv(location, 1, gl.GL_FALSE, &value.data[0]);
-            } else if (s.fields.len == 2) {
-                gl.glUniform2f(location, value[0], value[1]);
-            } else if (s.fields.len == 3) {
-                gl.glUniform3f(location, value[0], value[1], value[2]);
-            } else if (s.fields.len == 4) {
-                gl.glUniform4f(location, value[0], value[1], value[2], value[3]);
-            } else {
-                @compileError("Unsuppored struct type for uniforms.");
-            }
-        },
-        else => @compileError("Unsupported uniform type"),
-    }
-}
-
 pub const VertexAttribute = struct {
     vertex_type: VertexType,
     offset: u32,
@@ -358,13 +337,55 @@ pub const mat4 = struct {
         };
     }
 
+    pub fn scale(x: f32, y: f32, z: f32) mat4 {
+        return mat4{ .data = [_]f32{
+            x, 0, 0, 0,
+            0, y, 0, 0,
+            0, 0, z, 0,
+            0, 0, 0, 1,
+        } };
+    }
+
     pub fn translation(x: f32, y: f32, z: f32) mat4 {
-        return mat4{
+        return mat4{ .data = [_]f32{
             1, 0, 0, x,
             0, 1, 0, y,
             0, 0, 1, z,
             0, 0, 0, 1,
-        };
+        } };
+    }
+
+    pub fn rotate_x(angle: f32) mat4 {
+        const c = @cos(angle);
+        const s = @sin(angle);
+        return mat4{ .data = [_]f32{
+            1, 0, 0,  0,
+            0, c, -s, 0,
+            0, s, c,  0,
+            0, 0, 0,  1,
+        } };
+    }
+
+    pub fn rotate_y(angle: f32) mat4 {
+        const c = @cos(angle);
+        const s = @sin(angle);
+        return mat4{ .data = [_]f32{
+            c,  0, s, 0,
+            0,  1, 0, 0,
+            -s, 0, c, 0,
+            0,  0, 0, 1,
+        } };
+    }
+
+    pub fn rotate_z(angle: f32) mat4 {
+        const c = @cos(angle);
+        const s = @sin(angle);
+        return mat4{ .data = [_]f32{
+            c, -s, 0, 0,
+            s, c,  0, 0,
+            0, 0,  1, 0,
+            0, 0,  0, 1,
+        } };
     }
 
     pub fn perspective(fov: f32, aspect: f32, near: f32, far: f32) mat4 {
@@ -377,17 +398,104 @@ pub const mat4 = struct {
         } };
     }
 
+    pub fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) mat4 {
+        return mat4{ .data = [_]f32{
+            2 / (right - left), 0,                  0,                 -(right + left) / (right - left),
+            0,                  2 / (top - bottom), 0,                 -(top + bottom) / (top - bottom),
+            0,                  0,                  -2 / (far - near), -(far + near) / (far - near),
+            0,                  0,                  0,                 1,
+        } };
+    }
+
+    pub fn look_at(eye: vec3, target: vec3, up: vec3) mat4 {
+        const forward = normalize(vec3, target - eye);
+
+        if (@abs(dot(vec3, forward, up)) > 0.999) {
+            forward = normalize(vec3, vec3{ 0.001, 1, 0.001 });
+        }
+
+        const right = normalize(vec3, cross(forward, up));
+        const up_new = cross(right, forward);
+
+        return mat4{ .data = [_]f32{
+            right[0],               up_new[0],               -forward[0],             0,
+            right[1],               up_new[1],               -forward[1],             0,
+            right[2],               up_new[2],               -forward[2],             0,
+            -dot(vec3, right, eye), -dot(vec3, up_new, eye), dot(vec3, forward, eye), 1,
+        } };
+    }
+
     pub fn multiply(self: mat4, other: mat4) mat4 {
         var result: mat4 = undefined;
-        for (0..4) |row| {
-            for (0..4) |col| {
-                result.data[row + col * 4] =
-                    self.data[row + 0 * 4] * other.data[0 + col * 4] +
-                    self.data[row + 1 * 4] * other.data[1 + col * 4] +
-                    self.data[row + 2 * 4] * other.data[2 + col * 4] +
-                    self.data[row + 3 * 4] * other.data[3 + col * 4];
+
+        inline for (0..4) |row| {
+            const a = vec4{
+                self.data[row + 0 * 4],
+                self.data[row + 1 * 4],
+                self.data[row + 2 * 4],
+                self.data[row + 3 * 4],
+            };
+
+            inline for (0..4) |col| {
+                const b = vec4{
+                    other.data[0 + col * 4],
+                    other.data[1 + col * 4],
+                    other.data[2 + col * 4],
+                    other.data[3 + col * 4],
+                };
+
+                result.data[row + col * 4] = @reduce(.Add, a * b);
             }
         }
+
         return result;
     }
 };
+
+pub const vec2 = @Vector(2, f32);
+pub const vec3 = @Vector(3, f32);
+pub const vec4 = @Vector(4, f32);
+
+pub fn dot(comptime vec_t: type, a: vec_t, b: vec_t) f32 {
+    return @reduce(.Add, a * b);
+}
+
+pub fn cross(a: vec3, b: vec3) vec3 {
+    return vec3{
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    };
+}
+
+pub fn normalize(comptime vec_t: type, a: vec_t) vec_t {
+    const len = @sqrt(dot(vec_t, a, a));
+    if (len == 0.0) return @splat(0.0);
+    const divisor: vec_t = @splat(1.0 / len);
+    return a * divisor;
+}
+
+pub fn get_uniform_location(shader: Shader, name: [*c]const u8) i32 {
+    return gl.glGetUniformLocation(shader.id, @ptrCast(name));
+}
+
+pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
+    switch (@typeInfo(ty)) {
+        std.builtin.Type.int => gl.glUniform1i(location, value),
+        std.builtin.Type.float => gl.glUniform1f(location, value),
+        std.builtin.Type.@"struct" => |s| {
+            if (@TypeOf(value) == mat4) {
+                gl.glUniformMatrix4fv(location, 1, gl.GL_FALSE, &value.data[0]);
+            } else if (s.fields.len == 2) {
+                gl.glUniform2f(location, value[0], value[1]);
+            } else if (s.fields.len == 3) {
+                gl.glUniform3f(location, value[0], value[1], value[2]);
+            } else if (s.fields.len == 4) {
+                gl.glUniform4f(location, value[0], value[1], value[2], value[3]);
+            } else {
+                @compileError("Unsuppored struct type for uniforms.");
+            }
+        },
+        else => @compileError("Unsupported uniform type"),
+    }
+}
