@@ -389,13 +389,24 @@ pub const mat4 = struct {
     }
 
     pub fn perspective(fov: f32, aspect: f32, near: f32, far: f32) mat4 {
-        const tan_half_fov = @tan(fov / 2);
+        std.debug.assert(@abs(aspect - std.math.floatEps(f32)) > 0);
+
+        const f = 1.0 / @tan(fov / 2.0);
+
         return mat4{ .data = [_]f32{
-            1 / (aspect * tan_half_fov), 0,                0,                            0,
-            0,                           1 / tan_half_fov, 0,                            0,
-            0,                           0,                -(far + near) / (far - near), -(2 * far * near) / (far - near),
-            0,                           0,                -1,                           0,
+            f / aspect, 0, 0,                           0,
+            0,          f, 0,                           0,
+            0,          0, (far + near) / (near - far), (2 * far * near) / (near - far),
+            0,          0, -1,                          0,
         } };
+
+        // const tan_half_fov = @tan(fov / 2.0);
+        // return mat4{ .data = [_]f32{
+        //     1 / (aspect * tan_half_fov), 0,                0,                            0,
+        //     0,                           1 / tan_half_fov, 0,                            0,
+        //     0,                           0,                -(far + near) / (far - near), -(2 * far * near) / (far - near),
+        //     0,                           0,                -1,                           0,
+        // } };
     }
 
     pub fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) mat4 {
@@ -410,9 +421,9 @@ pub const mat4 = struct {
     pub fn look_at(eye: vec3, target: vec3, up: vec3) mat4 {
         const forward = normalize(vec3, target - eye);
 
-        if (@abs(dot(vec3, forward, up)) > 0.999) {
-            forward = normalize(vec3, vec3{ 0.001, 1, 0.001 });
-        }
+        // if (@abs(dot(vec3, forward, up)) > 0.999) {
+        //     forward = normalize(vec3, vec3{ 0.001, 1, 0.001 });
+        // }
 
         const right = normalize(vec3, cross(forward, up));
         const up_new = cross(right, forward);

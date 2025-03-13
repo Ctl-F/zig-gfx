@@ -32,9 +32,9 @@ pub fn main() !void {
     try mesh.upload(&vertices, &indices, vfmt);
     gfx.DebugPrintGLErrors();
 
-    const projection = gfx.mat4.perspective((90.0 * 3.1415926) / 180.0, params.width / params.height, 0.01, 1000.0);
-    const view = gfx.mat4.look_at(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
-    const model = gfx.mat4.scale(10, 10, 10);
+    const projection = gfx.mat4.perspective(3.1415926 / 8.0, params.width / params.height, 0.01, 1000.0);
+    const view = gfx.mat4.identity(); // gfx.mat4.look_at(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
+    const model = gfx.mat4.identity(); //gfx.mat4.scale(10, 10, 10);
 
     const shader = gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl") catch |err| val: {
         if (err == error.FileNotFound) {
@@ -59,7 +59,7 @@ pub fn main() !void {
             }
         }
 
-        gl.glClearColor(0.0, 0.1, 0.1, 1.0);
+        gl.glClearColor(0.0, 0.0, 0.01, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT);
 
         shader.bind();
