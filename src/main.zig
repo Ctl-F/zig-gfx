@@ -30,12 +30,13 @@ pub fn main() !void {
 
     var mesh = gfx.Mesh.init();
     try mesh.upload(&vertices, &indices, vfmt);
+    defer mesh.destroy();
     gfx.DebugPrintGLErrors();
 
-    const projection = gfx.mat4.perspective(3.1415926 / 8.0, params.width / params.height, 0.01, 1000.0);
-    const view = gfx.mat4.identity(); // gfx.mat4.look_at(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
-    const model = gfx.mat4.identity(); //gfx.mat4.scale(10, 10, 10);
+    const projection = gfx.mat4.createPerspective(3.1415926 / 2.0, @as(f32, params.width) / @as(f32, params.height), 0.01, 1000.0);
 
+    const view = gfx.mat4.createLookAt(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
+    const model = gfx.mat4.createScale(10, 0, 10); //gfx.mat4.scale(10, 10, 10);
     const shader = gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl") catch |err| val: {
         if (err == error.FileNotFound) {
             break :val try gfx.Shader.create_from_file("zig-out/bin/vertex.glsl", "zig-out/bin/fragment.glsl");

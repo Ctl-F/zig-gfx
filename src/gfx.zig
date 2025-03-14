@@ -2,12 +2,96 @@ const std = @import("std");
 pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
 pub const gl = @cImport(@cInclude("glad/glad.h"));
 
+/// GFX is a simple wrapper around SDL3 and opengl. We have bundled glad and it was generated to support opengl 3.3 core.
+/// If a different verion of opengl is desired you will probably want to regenrate glad to reflect that.
+/// Simple example of a basic program that should be enough to get you started:
+///
+/// <Example.zig>
+///
+/// const std = @import("std");
+/// const gfx = @import("gfx.zig");
+///
+/// // if you want to use sdl/opengl directly you can
+/// // by accessing them via gfx.sdl and gfx.gl
+/// // or by re-exposing them to your module directly:
+/// // const sdl = gfx.sdl;
+/// // const gl = gfx.gl;
+///
+/// pub fn main() !void {
+///     // if you want to show sdl errors when they happen
+///     // set this to true, otherwise keep it at false
+///     // gfx.ShowSDLErrors = true;
+///
+///     // window settings and context version
+///     const windowParams = gfx.InitParams {
+///         .title = "SDL Window in Zig",
+///         .width = 1280,
+///         .height = 720,
+///         .version = gfx.GLVersion{ .major = 3, .minor = 3, .core = true },
+///     };
+///
+///     // initialize sdl and create a window
+///     try gfx.Init(params);
+///     defer gfx.Quit();
+///
+///     /// setup the vertex format for the buffer
+///     var vertex_format = gfx.VertexFormatBuffer{};
+///     try vertex_format.add_attribute(gfx.VertexType.Float3); // position: vec3
+///     try vertex_format.add_attribute(gfx.VertexType.Float3); // color: vec3
+///
+///     const vertices = [_]f32 {
+///     //   x,    y,    z,    r,  g,  b,
+///        0.0, -0.5,  0.0,   1.0, 0.0, 0.0,
+///       -0.5,  0.5,  0.0,   0.0, 1.0, 0.0,
+///        0.5,  0.5,  0.0,   0.0, 0.0, 1.0,
+///     };
+///     const indices = [_]u32 {
+///         0, 1, 2,
+///     };
+///
+///     // upload the vertex information to the gpu using our vertex format
+///     var mesh = gfx.Mesh.init();
+///     try mesh.upload(&vertices, &indices, vertex_format);
+///     defer mesh.destroy();
+///
+///     // create our shader from file. This internally will create a temporary allocation (that will also be freed)
+///     // to the heap for storing our vertex and fragment shaders and I understand that it isn't
+///     // very zig-like. Later I will add a parameter to be able to pass in the allocator as a parameter
+///     // as well as provide a create_from_source alternative. But this is what is available for now just
+///     // to get things up and running.
+///     const shader = try gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl");
+///     defer shader.destroy();
+///
+///     // main loop
+///     main_loop: while(true){
+///         // this will be refactored to not require
+///         // direct usage of sdl here
+///         var event: gfx.sdl.SDL_Event = undefined;
+///         while(gfx.sdl.SDL_PollEvent(&event)){
+///             switch(gfx.sdl.SDL_EVENT_QUIT) => break :main_loop,
+///             else => {},
+///         }
+///
+///         // will be refactored to not require direct usage of opengl
+///         gfx.gl.glClearColor(0.0, 0.0, 0.01, 1.0);
+///         gfx.gl.glClear(gfx.gl.GL_COLOR_BUFFER_BIT);
+///
+///         shader.bind();
+///         mesh.present(gfx.Primitive.Triangles);
+///
+///         gfx.SwapBuffers();
+///     }
+/// }
+/// </Example.zig>
+/// Represents a version of OpenGL (core = false for compatability profile)
 pub const GLVersion = struct {
     major: i32,
     minor: i32,
     core: bool,
 };
 
+/// Represents window parameters and opengl version for
+/// initialization
 pub const InitParams = struct {
     title: [*c]const u8,
     width: u32,
@@ -22,6 +106,7 @@ var context: sdl.SDL_GLContext = null;
 
 pub var ShowSDLErrors = false;
 
+/// initialize sdl and create a window using the initialize parameters
 pub fn Init(params: InitParams) !void {
     if ((sdl.SDL_WasInit(sdl.SDL_INIT_VIDEO) & sdl.SDL_INIT_VIDEO) == 0) {
         if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) {
@@ -75,33 +160,36 @@ pub fn Init(params: InitParams) !void {
     gl.glViewport(0, 0, @intCast(params.width), @intCast(params.height));
 }
 
+/// destroy the window and quit sdl
 pub fn Quit() void {
     _ = sdl.SDL_GL_DestroyContext(context);
     sdl.SDL_DestroyWindow(window);
     sdl.SDL_Quit();
 }
 
+/// present the opengl render to the screen
 pub fn SwapBuffers() void {
     _ = sdl.SDL_GL_SwapWindow(window);
 }
 
+/// display any opengl errors (if they have occurred)
 pub fn DebugPrintGLErrors() void {
     if (ShowSDLErrors) {
         const err = gl.glGetError();
         if (err != gl.GL_NO_ERROR) {
             std.debug.print("OpenGL Error: {}\n", .{err});
         }
-    } else {
-        std.debug.print("Errors are disabled\n", .{});
     }
 }
 
+/// helper function to display sdl errors (if any have occurred);
 fn printSDLError() void {
     if (ShowSDLErrors) {
         std.debug.print("SDL_Error: {s}\n", .{sdl.SDL_GetError()});
     }
 }
 
+/// types of data that can exist in a vertex format.
 pub const VertexType = enum {
     Int1,
     Int2,
@@ -152,8 +240,10 @@ pub const VertexType = enum {
     }
 };
 
+/// maximum number of vertex attributes a format can have (increase this if 16 is too few somehow)
 pub const MAX_VERTEX_ATTRIBUTES = 16;
 
+/// primitive type for render. The most common is Trianges
 pub const Primitive = enum {
     Points,
     Lines,
@@ -172,11 +262,13 @@ pub const Primitive = enum {
     }
 };
 
+/// bundles vertex buffer, index buffer and array object together for presentation.
 pub const Mesh = struct {
     vao: u32 = 0,
     buffers: [2]u32 = .{ 0, 0 },
     index_count: u32 = 0,
 
+    /// create a new vertex array and allocate opengl buffers
     pub fn init() Mesh {
         var mesh = Mesh{};
 
@@ -184,6 +276,13 @@ pub const Mesh = struct {
         gl.glGenBuffers(2, @ptrCast(&mesh.buffers[0]));
 
         return mesh;
+    }
+
+    /// release the buffers and array object
+    pub fn destroy(self: Mesh) void {
+        Mesh.unbind();
+        gl.glDeleteBuffers(2, &self.buffers[0]);
+        gl.glDeleteVertexArrays(1, &self.vao);
     }
 
     pub fn bind(self: Mesh) void {
@@ -207,6 +306,9 @@ pub const Mesh = struct {
         self.index_count = @intCast(indices.len);
     }
 
+    /// present the mesh to opengl for rendering.
+    /// you must have already bound whatever shader you will be using and have uploaded any
+    /// uniform data before calling this.
     pub fn present(self: Mesh, topology: Primitive) void {
         self.bind();
         gl.glDrawElements(topology.get_gl_type(), @intCast(self.index_count), gl.GL_UNSIGNED_INT, null);
@@ -298,6 +400,31 @@ pub const VertexAttribute = struct {
     offset: u32,
 };
 
+/// represents the format that the vertex buffer will follow. This effectively tracks the total size
+/// a single vertex takes along with where each attribute begins and it's type.
+/// for a more complete vertex:
+/// const Vertex = struct {
+///     x: f32,
+///     y: f32,
+///     z: f32,
+///     normal_x: f32,
+///     normal_y: f32,
+///     normal_z: f32,
+///     uv_x: f32,
+///     uv_y: f32,
+///     color_r: f32,
+///     color_g: f32,
+///     color_b: f32,
+/// };
+///
+/// You would build the vertex format like so:
+/// var vfmt = VertexFormatBuffer{};
+/// try vfmt.add_attribute(VertexType.Float3);
+/// try vfmt.add_attribute(VertexType.Float3);
+/// try vfmt.add_attribute(VertexType.Float2);
+/// try vfmt.add_attribute(VertexType.Float3);
+///
+/// note that this should only really fail if you add too many vertex attributes to a single VertexFormatBuffer.
 pub const VertexFormatBuffer = struct {
     attributes: [MAX_VERTEX_ATTRIBUTES]VertexAttribute = undefined,
     attribute_count: u32 = 0,
@@ -323,149 +450,42 @@ pub const VertexFormatBuffer = struct {
     }
 };
 
-pub const mat4 = struct {
-    data: [16]f32,
+pub fn get_uniform_location(shader: Shader, name: [*c]const u8) i32 {
+    return gl.glGetUniformLocation(shader.id, @ptrCast(name));
+}
 
-    pub fn identity() mat4 {
-        return mat4{
-            .data = [_]f32{
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, 0, 0, 1,
-            },
-        };
-    }
-
-    pub fn scale(x: f32, y: f32, z: f32) mat4 {
-        return mat4{ .data = [_]f32{
-            x, 0, 0, 0,
-            0, y, 0, 0,
-            0, 0, z, 0,
-            0, 0, 0, 1,
-        } };
-    }
-
-    pub fn translation(x: f32, y: f32, z: f32) mat4 {
-        return mat4{ .data = [_]f32{
-            1, 0, 0, x,
-            0, 1, 0, y,
-            0, 0, 1, z,
-            0, 0, 0, 1,
-        } };
-    }
-
-    pub fn rotate_x(angle: f32) mat4 {
-        const c = @cos(angle);
-        const s = @sin(angle);
-        return mat4{ .data = [_]f32{
-            1, 0, 0,  0,
-            0, c, -s, 0,
-            0, s, c,  0,
-            0, 0, 0,  1,
-        } };
-    }
-
-    pub fn rotate_y(angle: f32) mat4 {
-        const c = @cos(angle);
-        const s = @sin(angle);
-        return mat4{ .data = [_]f32{
-            c,  0, s, 0,
-            0,  1, 0, 0,
-            -s, 0, c, 0,
-            0,  0, 0, 1,
-        } };
-    }
-
-    pub fn rotate_z(angle: f32) mat4 {
-        const c = @cos(angle);
-        const s = @sin(angle);
-        return mat4{ .data = [_]f32{
-            c, -s, 0, 0,
-            s, c,  0, 0,
-            0, 0,  1, 0,
-            0, 0,  0, 1,
-        } };
-    }
-
-    pub fn perspective(fov: f32, aspect: f32, near: f32, far: f32) mat4 {
-        std.debug.assert(@abs(aspect - std.math.floatEps(f32)) > 0);
-
-        const f = 1.0 / @tan(fov / 2.0);
-
-        return mat4{ .data = [_]f32{
-            f / aspect, 0, 0,                           0,
-            0,          f, 0,                           0,
-            0,          0, (far + near) / (near - far), (2 * far * near) / (near - far),
-            0,          0, -1,                          0,
-        } };
-
-        // const tan_half_fov = @tan(fov / 2.0);
-        // return mat4{ .data = [_]f32{
-        //     1 / (aspect * tan_half_fov), 0,                0,                            0,
-        //     0,                           1 / tan_half_fov, 0,                            0,
-        //     0,                           0,                -(far + near) / (far - near), -(2 * far * near) / (far - near),
-        //     0,                           0,                -1,                           0,
-        // } };
-    }
-
-    pub fn ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) mat4 {
-        return mat4{ .data = [_]f32{
-            2 / (right - left), 0,                  0,                 -(right + left) / (right - left),
-            0,                  2 / (top - bottom), 0,                 -(top + bottom) / (top - bottom),
-            0,                  0,                  -2 / (far - near), -(far + near) / (far - near),
-            0,                  0,                  0,                 1,
-        } };
-    }
-
-    pub fn look_at(eye: vec3, target: vec3, up: vec3) mat4 {
-        const forward = normalize(vec3, target - eye);
-
-        // if (@abs(dot(vec3, forward, up)) > 0.999) {
-        //     forward = normalize(vec3, vec3{ 0.001, 1, 0.001 });
-        // }
-
-        const right = normalize(vec3, cross(forward, up));
-        const up_new = cross(right, forward);
-
-        return mat4{ .data = [_]f32{
-            right[0],               up_new[0],               -forward[0],             0,
-            right[1],               up_new[1],               -forward[1],             0,
-            right[2],               up_new[2],               -forward[2],             0,
-            -dot(vec3, right, eye), -dot(vec3, up_new, eye), dot(vec3, forward, eye), 1,
-        } };
-    }
-
-    pub fn multiply(self: mat4, other: mat4) mat4 {
-        var result: mat4 = undefined;
-
-        inline for (0..4) |row| {
-            const a = vec4{
-                self.data[row + 0 * 4],
-                self.data[row + 1 * 4],
-                self.data[row + 2 * 4],
-                self.data[row + 3 * 4],
-            };
-
-            inline for (0..4) |col| {
-                const b = vec4{
-                    other.data[0 + col * 4],
-                    other.data[1 + col * 4],
-                    other.data[2 + col * 4],
-                    other.data[3 + col * 4],
-                };
-
-                result.data[row + col * 4] = @reduce(.Add, a * b);
+pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
+    switch (@typeInfo(ty)) {
+        std.builtin.Type.int => gl.glUniform1i(location, value),
+        std.builtin.Type.float => gl.glUniform1f(location, value),
+        std.builtin.Type.@"struct" => |s| {
+            if (@TypeOf(value) == mat4) {
+                gl.glUniformMatrix4fv(location, 1, gl.GL_FALSE, &value.fields[0]);
+            } else if (s.fields.len == 2) {
+                gl.glUniform2f(location, value[0], value[1]);
+            } else if (s.fields.len == 3) {
+                gl.glUniform3f(location, value[0], value[1], value[2]);
+            } else if (s.fields.len == 4) {
+                gl.glUniform4f(location, value[0], value[1], value[2], value[3]);
+            } else {
+                @compileError("Unsuppored struct type for uniforms.");
             }
-        }
-
-        return result;
+        },
+        else => @compileError("Unsupported uniform type"),
     }
-};
+}
 
-pub const vec2 = @Vector(2, f32);
-pub const vec3 = @Vector(3, f32);
-pub const vec4 = @Vector(4, f32);
+//---------------------------------------------
+// BASIC LINEAR ALGEBRA TYPES AND FUNCTIONS
+//---------------------------------------------
+// this is not an exahstive set of functions
+// and there may be missing functionality.
+// This also has not been optimized beyond
+// using SIMD types where possible and
+// basic attempts and writing concise and
+// straightforward code that the compiler
+// should be able to optimzie
+//---------------------------------------------
 
 pub fn dot(comptime vec_t: type, a: vec_t, b: vec_t) f32 {
     return @reduce(.Add, a * b);
@@ -486,27 +506,379 @@ pub fn normalize(comptime vec_t: type, a: vec_t) vec_t {
     return a * divisor;
 }
 
-pub fn get_uniform_location(shader: Shader, name: [*c]const u8) i32 {
-    return gl.glGetUniformLocation(shader.id, @ptrCast(name));
-}
+pub const vec2 = @Vector(2, f32);
+pub const vec3 = @Vector(3, f32);
+pub const vec4 = @Vector(4, f32);
 
-pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
-    switch (@typeInfo(ty)) {
-        std.builtin.Type.int => gl.glUniform1i(location, value),
-        std.builtin.Type.float => gl.glUniform1f(location, value),
-        std.builtin.Type.@"struct" => |s| {
-            if (@TypeOf(value) == mat4) {
-                gl.glUniformMatrix4fv(location, 1, gl.GL_FALSE, &value.data[0]);
-            } else if (s.fields.len == 2) {
-                gl.glUniform2f(location, value[0], value[1]);
-            } else if (s.fields.len == 3) {
-                gl.glUniform3f(location, value[0], value[1], value[2]);
-            } else if (s.fields.len == 4) {
-                gl.glUniform4f(location, value[0], value[1], value[2], value[3]);
-            } else {
-                @compileError("Unsuppored struct type for uniforms.");
-            }
+/// 4 by 4 matrix type.
+pub const mat4 = extern struct {
+    pub const Self = @This();
+    fields: [4][4]f32, // [row][col]
+
+    /// zero matrix.
+    pub const zero = Self{
+        .fields = [4][4]f32{
+            [4]f32{ 0, 0, 0, 0 },
+            [4]f32{ 0, 0, 0, 0 },
+            [4]f32{ 0, 0, 0, 0 },
+            [4]f32{ 0, 0, 0, 0 },
         },
-        else => @compileError("Unsupported uniform type"),
+    };
+
+    /// identitiy matrix
+    pub const identity = Self{
+        .fields = [4][4]f32{
+            [4]f32{ 1, 0, 0, 0 },
+            [4]f32{ 0, 1, 0, 0 },
+            [4]f32{ 0, 0, 1, 0 },
+            [4]f32{ 0, 0, 0, 1 },
+        },
+    };
+
+    pub fn format(value: Self, comptime _: []const u8, _: std.fmt.FormatOptions, stream: anytype) !void {
+        try stream.writeAll("mat4{");
+
+        inline for (0..4) |i| {
+            const row = value.fields[i];
+            try stream.print(" ({d:.2} {d:.2} {d:.2} {d:.2})", .{ row[0], row[1], row[2], row[3] });
+        }
+
+        try stream.writeAll(" }");
     }
-}
+
+    /// performs matrix multiplication of a*b
+    pub fn mul(a: Self, b: Self) Self {
+        var result: Self = undefined;
+        inline for (0..4) |row| {
+            inline for (0..4) |col| {
+                var sum: f32 = 0.0;
+                inline for (0..4) |i| {
+                    sum += a.fields[row][i] * b.fields[i][col];
+                }
+                result.fields[row][col] = sum;
+            }
+        }
+        return result;
+    }
+
+    /// transposes the matrix.
+    /// this will swap columns with rows.
+    pub fn transpose(a: Self) Self {
+        var result: Self = undefined;
+        inline for (0..4) |row| {
+            inline for (0..4) |col| {
+                result.fields[row][col] = a.fields[col][row];
+            }
+        }
+        return result;
+    }
+
+    // taken from GLM implementation
+
+    /// Creates a look-at matrix.
+    /// The matrix will create a transformation that can be used
+    /// as a camera transform.
+    /// the camera is located at `eye` and will look into `direction`.
+    /// `up` is the direction from the screen center to the upper screen border.
+    pub fn createLook(eye: vec3, direction: vec3, up: vec3) Self {
+        const f = normalize(vec3, direction);
+        const s = normalize(vec3, cross(f, up));
+        const u = cross(s, f);
+
+        var result = Self.identity;
+        result.fields[0][0] = s[0];
+        result.fields[1][0] = s[1];
+        result.fields[2][0] = s[2];
+        result.fields[0][1] = u[0];
+        result.fields[1][1] = u[1];
+        result.fields[2][1] = u[2];
+        result.fields[0][2] = -f[0];
+        result.fields[1][2] = -f[1];
+        result.fields[2][2] = -f[2];
+        result.fields[3][0] = -dot(vec3, s, eye);
+        result.fields[3][1] = -dot(vec3, u, eye);
+        result.fields[3][2] = dot(vec3, f, eye);
+        return result;
+    }
+
+    /// Creates a look-at matrix.
+    /// The matrix will create a transformation that can be used
+    /// as a camera transform.
+    /// the camera is located at `eye` and will look at `center`.
+    /// `up` is the direction from the screen center to the upper screen border.
+    pub fn createLookAt(eye: vec3, center: vec3, up: vec3) Self {
+        return createLook(eye, center - eye, up);
+    }
+
+    // taken from GLM implementation
+
+    /// creates a perspective transformation matrix.
+    /// `fov` is the field of view in radians,
+    /// `aspect` is the screen aspect ratio (width / height)
+    /// `near` is the distance of the near clip plane, whereas `far` is the distance to the far clip plane.
+    pub fn createPerspective(fov: f32, aspect: f32, near: f32, far: f32) Self {
+        std.debug.assert(@abs(aspect - 0.001) > 0);
+
+        const tanHalfFovy = @tan(fov / 2);
+
+        var result = Self.zero;
+        result.fields[0][0] = 1.0 / (aspect * tanHalfFovy);
+        result.fields[1][1] = 1.0 / (tanHalfFovy);
+        result.fields[2][2] = -(far + near) / (far - near);
+        result.fields[2][3] = -1;
+        result.fields[3][2] = -(2 * far * near) / (far - near);
+        return result;
+    }
+
+    /// creates a rotation matrix around a certain axis.
+    pub fn createAngleAxis(axis: vec3, angle: f32) Self {
+        const cos = @cos(angle);
+        const sin = @sin(angle);
+
+        const normalized = normalize(vec3, axis);
+        const x = normalized.x;
+        const y = normalized.y;
+        const z = normalized.z;
+
+        return Self{
+            .fields = [4][4]f32{
+                [4]f32{ cos + x * x * (1 - cos), x * y * (1 - cos) + z * sin, x * z * (1 - cos) - y * sin, 0 },
+                [4]f32{ y * x * (1 - cos) - z * sin, cos + y * y * (1 - cos), y * z * (1 - cos) + x * sin, 0 },
+                [4]f32{ z * x * (1 - cos) + y * sin, z * y * (1 - cos) - x * sin, cos + z * z * (1 - cos), 0 },
+                [4]f32{ 0, 0, 0, 1 },
+            },
+        };
+    }
+
+    /// creates matrix that will scale a homogeneous matrix.
+    pub fn createUniformScale(scale: f32) Self {
+        return createScale(scale, scale, scale);
+    }
+
+    /// Creates a non-uniform scaling matrix
+    pub fn createScale(x: f32, y: f32, z: f32) Self {
+        return Self{
+            .fields = [4][4]f32{
+                [4]f32{ x, 0, 0, 0 },
+                [4]f32{ 0, y, 0, 0 },
+                [4]f32{ 0, 0, z, 0 },
+                [4]f32{ 0, 0, 0, 1 },
+            },
+        };
+    }
+
+    /// creates matrix that will translate a homogeneous matrix.
+    pub fn createTranslationXYZ(x: f32, y: f32, z: f32) Self {
+        return Self{
+            .fields = [4][4]f32{
+                [4]f32{ 1, 0, 0, 0 },
+                [4]f32{ 0, 1, 0, 0 },
+                [4]f32{ 0, 0, 1, 0 },
+                [4]f32{ x, y, z, 1 },
+            },
+        };
+    }
+
+    /// creates matrix that will scale a homogeneous matrix.
+    pub fn createTranslation(v: vec3) Self {
+        return Self{
+            .fields = [4][4]f32{
+                [4]f32{ 1, 0, 0, 0 },
+                [4]f32{ 0, 1, 0, 0 },
+                [4]f32{ 0, 0, 1, 0 },
+                [4]f32{ v.x, v.y, v.z, 1 },
+            },
+        };
+    }
+
+    /// creates an orthogonal projection matrix.
+    /// `left`, `right`, `bottom` and `top` are the borders of the screen whereas `near` and `far` define the
+    /// distance of the near and far clipping planes.
+    pub fn createOrthogonal(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) Self {
+        var result = Self.identity;
+        result.fields[0][0] = 2 / (right - left);
+        result.fields[1][1] = 2 / (top - bottom);
+        result.fields[2][2] = -2 / (far - near);
+        result.fields[3][0] = -(right + left) / (right - left);
+        result.fields[3][1] = -(top + bottom) / (top - bottom);
+        result.fields[3][2] = -(far + near) / (far - near);
+        return result;
+    }
+
+    /// Batch matrix multiplication. Will multiply all matrices from "first" to "last".
+    pub fn batchMul(items: []const Self) Self {
+        if (items.len == 0)
+            return Self.identity;
+        if (items.len == 1)
+            return items[0];
+        var value = items[0];
+        for (1..items.len) |i| {
+            value = value.mul(items[i]);
+        }
+        return value;
+    }
+
+    /// calculates the invert matrix when it's possible (returns null otherwise)
+    /// only works on float matrices
+    pub fn invert(src: Self) ?Self {
+        // https://github.com/stackgl/gl-mat4/blob/master/invert.js
+        const a: [16]f32 = @bitCast(src.fields);
+
+        const a00 = a[0];
+        const a01 = a[1];
+        const a02 = a[2];
+        const a03 = a[3];
+        const a10 = a[4];
+        const a11 = a[5];
+        const a12 = a[6];
+        const a13 = a[7];
+        const a20 = a[8];
+        const a21 = a[9];
+        const a22 = a[10];
+        const a23 = a[11];
+        const a30 = a[12];
+        const a31 = a[13];
+        const a32 = a[14];
+        const a33 = a[15];
+
+        const b00 = a00 * a11 - a01 * a10;
+        const b01 = a00 * a12 - a02 * a10;
+        const b02 = a00 * a13 - a03 * a10;
+        const b03 = a01 * a12 - a02 * a11;
+        const b04 = a01 * a13 - a03 * a11;
+        const b05 = a02 * a13 - a03 * a12;
+        const b06 = a20 * a31 - a21 * a30;
+        const b07 = a20 * a32 - a22 * a30;
+        const b08 = a20 * a33 - a23 * a30;
+        const b09 = a21 * a32 - a22 * a31;
+        const b10 = a21 * a33 - a23 * a31;
+        const b11 = a22 * a33 - a23 * a32;
+
+        // Calculate the determinant
+        var det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+        if (std.math.approxEqAbs(f32, det, 0, 1e-8)) {
+            return null;
+        }
+        det = 1.0 / det;
+
+        const out = [16]f32{
+            (a11 * b11 - a12 * b10 + a13 * b09) * det, // 0
+            (a02 * b10 - a01 * b11 - a03 * b09) * det, // 1
+            (a31 * b05 - a32 * b04 + a33 * b03) * det, // 2
+            (a22 * b04 - a21 * b05 - a23 * b03) * det, // 3
+            (a12 * b08 - a10 * b11 - a13 * b07) * det, // 4
+            (a00 * b11 - a02 * b08 + a03 * b07) * det, // 5
+            (a32 * b02 - a30 * b05 - a33 * b01) * det, // 6
+            (a20 * b05 - a22 * b02 + a23 * b01) * det, // 7
+            (a10 * b10 - a11 * b08 + a13 * b06) * det, // 8
+            (a01 * b08 - a00 * b10 - a03 * b06) * det, // 9
+            (a30 * b04 - a31 * b02 + a33 * b00) * det, // 10
+            (a21 * b02 - a20 * b04 - a23 * b00) * det, // 11
+            (a11 * b07 - a10 * b09 - a12 * b06) * det, // 12
+            (a00 * b09 - a01 * b07 + a02 * b06) * det, // 13
+            (a31 * b01 - a30 * b03 - a32 * b00) * det, // 14
+            (a20 * b03 - a21 * b01 + a22 * b00) * det, // 15
+        };
+        return Self{
+            .fields = @as([4][4]f32, @bitCast(out)),
+        };
+    }
+};
+
+pub const Quat = struct {
+    intern: vec4,
+
+    pub inline fn init(x: f32, y: f32, z: f32, w: f32) Quat {
+        return Quat{ .intern = vec4{ x, y, z, w } };
+    }
+
+    pub inline fn mul(a: Quat, b: Quat) Quat {
+        const ax, const ay, const az, const aw = a.intern;
+        const bx, const by, const bz, const bw = b.intern;
+
+        return Quat.init(aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz);
+    }
+
+    pub inline fn normalize(q: Quat) Quat {
+        const len_sq = dot(vec4, q.intern, q.intern);
+
+        if (len_sq == 0) {
+            return Quat.identity;
+        }
+        const divisor: vec4 = @splat(1.0 / @sqrt(len_sq));
+        return Quat{ .intern = q.intern * divisor };
+    }
+
+    pub inline fn conjugate(q: Quat) Quat {
+        return Quat.init(-q.intern[0], -q.intern[1], -q.intern[2], q.intern[3]);
+    }
+
+    pub inline fn to_mat4(q: Quat) mat4 {
+        const x2, const y2, const z2, _ = q.intern * q.intern;
+        const xy = q.intern[0] * q.intern[1];
+        const xz = q.intern[0] * q.intern[2];
+        const yz = q.intern[1] * q.intern[2];
+        const wx = q.intern[3] * q.intern[0];
+        const wy = q.intern[3] * q.intern[1];
+        const wz = q.intern[3] * q.intern[2];
+
+        const out = [_]f32{
+            1.0 - 2.0 * (y2 + z2), 2.0 * (xy - wz),       2.0 * (xz + wy),       0.0,
+            2.0 * (xy + wz),       1.0 - 2.0 * (x2 + z2), 2.0 * (yz - wx),       0.0,
+            2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (x2 + y2), 0.0,
+            0.0,                   0.0,                   0.0,                   1.0,
+        };
+        return mat4{
+            .fields = @as([4][4]f32, @bitCast(out)),
+        };
+    }
+
+    pub inline fn lerp(a: Quat, b: Quat, t: f32) Quat {
+        std.debug.assert(0.0 <= t and t <= 1.0);
+
+        const inv_t: vec4 = @splat(1.0 - t);
+        const t_v: vec4 = @splat(t);
+
+        const blended = Quat{
+            .intern = a.intern * inv_t + b.intern * t_v,
+        };
+        return blended.normalize();
+    }
+
+    pub inline fn slerp(a: Quat, b: Quat, t: f32) Quat {
+        std.debug.assert(0.0 <= t and t <= 1.0);
+
+        const q1 = a;
+        var q2 = b;
+
+        var abdot = dot(vec4, q1.intern, q2.intern);
+
+        if (abdot < 0.0) {
+            q2.intern *= @splat(-1);
+            abdot = -abdot;
+        }
+
+        if (abdot > (1.0 - std.math.floatEps(f32))) {
+            return lerp(q1, q2, t);
+        }
+
+        const theta = std.math.acos(abdot);
+        const sin_theta = @sin(theta);
+
+        const w1: vec4 = @splat(@sin((1.0 - t) * theta) / sin_theta);
+        const w2: vec4 = @splat(@sin(t * theta) / sin_theta);
+
+        return Quat{ .intern = (q1.intern * w1) + (q2.intern * w2) };
+    }
+
+    pub inline fn angle_axis(angle: f32, axis: vec3) Quat {
+        const half_angle = angle * 0.5;
+        const s: vec3 = @splat(@sin(half_angle));
+        const c: @Vector(1, f32) = @splat(@cos(half_angle));
+
+        return Quat{ .intern = (axis * s) ++ c };
+    }
+
+    pub const identity = Quat.init(0.0, 0.0, 0.0, 1.0);
+};
