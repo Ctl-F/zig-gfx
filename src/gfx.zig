@@ -475,6 +475,59 @@ pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
     }
 }
 
+//--------------------------------------------
+// INPUT
+//--------------------------------------------
+// This is a lightweight wrapper around sdl events
+// with the purpose of providing a quick way of
+// getting started with basic events without
+// having to directly interface with them. You
+// can absolutely interact with SDL directly if
+// you need to 
+//--------------------------------------------
+
+pub fn CreateEventHooks(ctx_t: type) type {
+    return struct {
+        EventHooks = struct {
+        on_quit: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        on_key_down: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        on_key_up: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        on_mouse_down: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        on_mouse_up: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        on_mouse_move: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
+        },
+        pub fn PollEvents(hooks: EventHooks, ctx: ?*ctx_t){
+            var event: sdl.SDL_Event = undefined;
+            while(sdl.SDL_PollEvent(&event)){
+                switch(event.type){
+                    sdl.SDL_EVENT_QUIT => {
+                        if(hooks.on_quit) |hook|{
+                            hook(event, ctx);
+                        }
+                    },
+                    sdl.SDL_KEY_DOWN => {
+
+                    },
+                    sdl.SDL_KEY_UP => {
+
+                    },
+                    sdl.SDL_MOUSE_BUTTON_DOWN => {
+
+                    },
+                    sdl.SDL_MOUSE_BUTTON_UP => {
+
+                    },
+                    sdl.SDL_MOUSE_MOVEMENT => {
+
+                    },
+                    else => {}
+                }
+            }
+        }
+    };
+}
+
+
 //---------------------------------------------
 // BASIC LINEAR ALGEBRA TYPES AND FUNCTIONS
 //---------------------------------------------

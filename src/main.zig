@@ -9,8 +9,8 @@ pub fn main() !void {
 
     const params = gfx.InitParams{
         .title = "Hello OpenGL",
-        .width = 1280,
-        .height = 720,
+        .width = 800,
+        .height = 600,
         .version = gfx.GLVersion{ .major = 3, .minor = 3, .core = true },
     };
     try gfx.Init(params);
