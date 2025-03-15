@@ -1,7 +1,3 @@
-const std = @import("std");
-pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
-pub const gl = @cImport(@cInclude("glad/glad.h"));
-
 /// GFX is a simple wrapper around SDL3 and opengl. We have bundled glad and it was generated to support opengl 3.3 core.
 /// If a different verion of opengl is desired you will probably want to regenrate glad to reflect that.
 /// Simple example of a basic program that should be enough to get you started:
@@ -16,6 +12,30 @@ pub const gl = @cImport(@cInclude("glad/glad.h"));
 /// // or by re-exposing them to your module directly:
 /// // const sdl = gfx.sdl;
 /// // const gl = gfx.gl;
+///
+///  // setup for input:
+///  // the errors that your program might raise during event handling
+///  const MyErrors = error{ NullContext }; // add any errors to this set as needed
+///
+///  // a struct to give your event handling some context to operate on. The type is needed
+///  // though the actual context itself is technically optional
+///  const MyContext = struct {
+///     running: bool,
+///  };
+///
+///  const EventHooks = gfx.CreateEventHooks(MyContext, MyErrors);
+///  const EventHooksType = EventHooks.EventHooks;
+///
+///  // the minimal event handler for the "onQuit" event (when the close button is clicked)
+///  fn handleOnQuit(_: gfx.EventType, context: ?*MyContext) MyErrors!void {
+///     if(context) |ctx| {
+///         ctx.running = false;
+///         return;
+///     }
+///
+///     return MyErrors.NullContext;
+///   }
+///
 ///
 /// pub fn main() !void {
 ///     // if you want to show sdl errors when they happen
@@ -54,23 +74,19 @@ pub const gl = @cImport(@cInclude("glad/glad.h"));
 ///     try mesh.upload(&vertices, &indices, vertex_format);
 ///     defer mesh.destroy();
 ///
-///     // create our shader from file. This internally will create a temporary allocation (that will also be freed)
-///     // to the heap for storing our vertex and fragment shaders and I understand that it isn't
-///     // very zig-like. Later I will add a parameter to be able to pass in the allocator as a parameter
-///     // as well as provide a create_from_source alternative. But this is what is available for now just
-///     // to get things up and running.
-///     const shader = try gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl");
+///     // create our shader from file.
+///     const shader = try gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl", std.heap.page_allocator);
 ///     defer shader.destroy();
+///
+///     var appContext = MyContext{ .running = true };
+///     const eventHooks = EventHooksType {
+///         .on_quit = handleOnQuit,
+///     };
+///
 ///
 ///     // main loop
 ///     main_loop: while(true){
-///         // this will be refactored to not require
-///         // direct usage of sdl here
-///         var event: gfx.sdl.SDL_Event = undefined;
-///         while(gfx.sdl.SDL_PollEvent(&event)){
-///             switch(gfx.sdl.SDL_EVENT_QUIT) => break :main_loop,
-///             else => {},
-///         }
+///         try EventHooks.PollEvents(eventHooks, &appContext);
 ///
 ///         // will be refactored to not require direct usage of opengl
 ///         gfx.gl.glClearColor(0.0, 0.0, 0.01, 1.0);
@@ -83,6 +99,10 @@ pub const gl = @cImport(@cInclude("glad/glad.h"));
 ///     }
 /// }
 /// </Example.zig>
+const std = @import("std");
+pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
+pub const gl = @cImport(@cInclude("glad/glad.h"));
+
 /// Represents a version of OpenGL (core = false for compatability profile)
 pub const GLVersion = struct {
     major: i32,
@@ -318,8 +338,7 @@ pub const Mesh = struct {
 pub const Shader = struct {
     id: u32,
 
-    pub fn create_from_file(vertex_filename: []const u8, fragment_filename: []const u8) !Shader {
-        const allocator = std.heap.page_allocator;
+    pub fn create_from_file(vertex_filename: []const u8, fragment_filename: []const u8, allocator: std.mem.Allocator) !Shader {
         const vsource = try load_file_text(vertex_filename, allocator);
         defer allocator.free(vsource);
 
@@ -475,6 +494,8 @@ pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
     }
 }
 
+pub const EventTy = sdl.SDL_Event;
+
 //--------------------------------------------
 // INPUT
 //--------------------------------------------
@@ -483,50 +504,70 @@ pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
 // getting started with basic events without
 // having to directly interface with them. You
 // can absolutely interact with SDL directly if
-// you need to 
+// you need to
 //--------------------------------------------
 
-pub fn CreateEventHooks(ctx_t: type) type {
+pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
     return struct {
-        EventHooks = struct {
-        on_quit: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        on_key_down: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        on_key_up: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        on_mouse_down: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        on_mouse_up: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        on_mouse_move: ?*const fn(event: sdl.SDL_Event, ctx: ?*ctx_t),
-        },
-        pub fn PollEvents(hooks: EventHooks, ctx: ?*ctx_t){
-            var event: sdl.SDL_Event = undefined;
-            while(sdl.SDL_PollEvent(&event)){
-                switch(event.type){
+        pub const EventHooks: type = struct {
+            on_quit: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            on_key_down: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            on_key_up: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            on_mouse_down: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            on_mouse_up: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            on_mouse_move: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+        };
+
+        pub fn PollEvents(hooks: EventHooks, ctx: ?*ctx_t) err!void {
+            comptime {
+                if (@typeInfo(err) != .error_set) {
+                    @compileError("Expected error set as parameter, 'err' parameter is not an errorset.");
+                }
+            }
+
+            var event: EventTy = undefined;
+            while (sdl.SDL_PollEvent(&event)) {
+                switch (event.type) {
                     sdl.SDL_EVENT_QUIT => {
-                        if(hooks.on_quit) |hook|{
-                            hook(event, ctx);
+                        if (hooks.on_quit) |hook| {
+                            try hook(event, ctx);
                         }
                     },
-                    sdl.SDL_KEY_DOWN => {
-
+                    sdl.SDL_EVENT_KEY_DOWN => {
+                        if (hooks.on_key_down) |hook| {
+                            try hook(event, ctx);
+                        }
                     },
-                    sdl.SDL_KEY_UP => {
-
+                    sdl.SDL_EVENT_KEY_UP => {
+                        if (hooks.on_key_up) |hook| {
+                            try hook(event, ctx);
+                        }
                     },
-                    sdl.SDL_MOUSE_BUTTON_DOWN => {
-
+                    sdl.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+                        if (hooks.on_mouse_down) |hook| {
+                            try hook(event, ctx);
+                        }
                     },
-                    sdl.SDL_MOUSE_BUTTON_UP => {
-
+                    sdl.SDL_EVENT_MOUSE_BUTTON_UP => {
+                        if (hooks.on_mouse_up) |hook| {
+                            try hook(event, ctx);
+                        }
                     },
-                    sdl.SDL_MOUSE_MOVEMENT => {
-
+                    sdl.SDL_EVENT_MOUSE_MOTION => {
+                        if (hooks.on_mouse_move) |hook| {
+                            try hook(event, ctx);
+                        }
                     },
-                    else => {}
+                    else => {},
                 }
             }
         }
     };
 }
 
+pub fn SetMouseCaptured(capture: bool) void {
+    _ = sdl.SDL_SetWindowRelativeMouseMode(window, capture);
+}
 
 //---------------------------------------------
 // BASIC LINEAR ALGEBRA TYPES AND FUNCTIONS
@@ -887,6 +928,17 @@ pub const Quat = struct {
         };
     }
 
+    pub inline fn rotate_vec3(q: Quat, v: vec3) vec3 {
+        const qx, const qy, const qz, const qw = q.intern;
+        const qv = vec3{ qx, qy, qz };
+
+        const twovec: vec3 = @splat(2.0);
+        const t = twovec * cross(qv, v);
+        const vqw: vec3 = @splat(qw);
+
+        return v + (vqw * t) + cross(qv, t);
+    }
+
     pub inline fn lerp(a: Quat, b: Quat, t: f32) Quat {
         std.debug.assert(0.0 <= t and t <= 1.0);
 
@@ -928,9 +980,10 @@ pub const Quat = struct {
     pub inline fn angle_axis(angle: f32, axis: vec3) Quat {
         const half_angle = angle * 0.5;
         const s: vec3 = @splat(@sin(half_angle));
-        const c: @Vector(1, f32) = @splat(@cos(half_angle));
+        const c = @cos(half_angle);
+        const xx, const yy, const zz = (axis * s);
 
-        return Quat{ .intern = (axis * s) ++ c };
+        return Quat{ .intern = vec4{ xx, yy, zz, c } };
     }
 
     pub const identity = Quat.init(0.0, 0.0, 0.0, 1.0);
