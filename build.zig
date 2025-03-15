@@ -36,6 +36,8 @@ pub fn build(b: *std.Build) void {
     exe.addCSourceFile(.{ .file = b.path("src/glad/src/glad.c"), .flags = &.{} });
     exe.linkSystemLibrary("SDL3");
     exe.linkSystemLibrary("GL");
+    exe.linkSystemLibrary("sdl_image");
+    exe.linkSystemLibrary("sdl_ttf");
     exe.linkLibC();
 
     exe.addIncludePath(b.path("src/glad/include/"));

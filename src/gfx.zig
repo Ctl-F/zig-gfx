@@ -102,6 +102,8 @@
 const std = @import("std");
 pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
 pub const gl = @cImport(@cInclude("glad/glad.h"));
+pub const ttf = @cImport(@cInclude("SDL3_ttf/SDL_ttf.h"));
+pub const img = @cImport(@cInclude("SDL3_image/SDL_image.h"));
 
 /// Represents a version of OpenGL (core = false for compatability profile)
 pub const GLVersion = struct {
@@ -135,6 +137,11 @@ pub fn Init(params: InitParams) !void {
         }
     }
 
+    if(!ttf.TTF_Init()){
+        sdl.SDL_Quit();
+        return error.TTF_Init;
+    }
+
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_MAJOR_VERSION, @intCast(params.version.major));
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_MINOR_VERSION, @intCast(params.version.minor));
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_PROFILE_MASK, switch (params.version.core) {
@@ -146,6 +153,7 @@ pub fn Init(params: InitParams) !void {
 
     if (window == null) {
         printSDLError();
+        ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_WindowInit;
     }
@@ -154,6 +162,7 @@ pub fn Init(params: InitParams) !void {
     if (context == null) {
         printSDLError();
         sdl.SDL_DestroyWindow(window);
+        ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_ContextCreate;
     }
@@ -162,6 +171,7 @@ pub fn Init(params: InitParams) !void {
         printSDLError();
         _ = sdl.SDL_GL_DestroyContext(context);
         sdl.SDL_DestroyWindow(window);
+        ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_BindContext;
     }
@@ -169,6 +179,7 @@ pub fn Init(params: InitParams) !void {
     if (gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)) == 0) {
         _ = sdl.SDL_GL_DestroyContext(context);
         sdl.SDL_DestroyWindow(window);
+        ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.GLAD_Load;
     }
@@ -184,6 +195,7 @@ pub fn Init(params: InitParams) !void {
 pub fn Quit() void {
     _ = sdl.SDL_GL_DestroyContext(context);
     sdl.SDL_DestroyWindow(window);
+    ttf.TTF_Quit();
     sdl.SDL_Quit();
 }
 
@@ -208,6 +220,72 @@ fn printSDLError() void {
         std.debug.print("SDL_Error: {s}\n", .{sdl.SDL_GetError()});
     }
 }
+
+pub const Image = ?*sdl.SDL_Surface;
+
+pub const TexturePolicy = enum {
+    Repeat,
+    Clamp,
+    Mirrored,
+
+    pub fn get_gl_policy(self: TexturePolicy) c_int {
+        return switch(self){
+            .Repeat => gl.GL_REPEAT,
+            .Mirrored => gl.GL_MIRRORED_REPEAT,
+            .Clamp => gl.GL_CLAMP_TO_EDGE, 
+        };
+    };
+};
+
+pub const SamplePolicy = enum {
+    Nearest,
+    NearestMipNearest,
+    NearestMipLinear,
+    Linear,
+    LinearMipNearest,
+    LinearMipLinear,
+
+    pub fn get_gl_policy(self: SamplePolicy) c_int {
+        return switch(self){
+            .Nearest => gl.GL_NEAREST,
+            .NearestMipNearest => gl.GL_NEAREST_MIPMAP_NEAREST,
+            .NearestMipLinear => gl.GL_NEAREST_MIPMAP_LINEAR,
+            .Linear => gl.GL_LINEAR,
+            .LinearMipNearest => gl.GL_LINEAR_MIPMAP_NEAREST,
+            .LinearMipLinear => gl.GL_LINEAR_MIPMAP_LINEAR,
+        };
+    }
+};
+
+pub const TextureSettings = struct {
+    texture_policy: TexturePolicy,
+    min_sample_policy: SamplePolicy,
+    mag_sample_policy: SamplePolicy,
+    gen_mipmaps: bool = true,
+};
+
+pub const Texture = struct {
+    id: u32,
+    settings: const TextureSettings,
+};
+
+pub fn UploadImage(image: Image) !Texture {
+
+}
+
+pub fn LoadImage(filename: [*c]const u8) !Image {
+    const image = img.IMG_Load(filename);
+    if(image == null){
+        return error.ImageLoad;
+    }
+    return image;
+}
+pub fn DestroyImage(image: Image) void {
+    if(image != null){
+        sdl.SDL_DestroySurface(image);
+    }
+}
+
 
 /// types of data that can exist in a vertex format.
 pub const VertexType = enum {
