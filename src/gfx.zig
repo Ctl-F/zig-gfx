@@ -137,7 +137,7 @@ pub fn Init(params: InitParams) !void {
         }
     }
 
-    if(!ttf.TTF_Init()){
+    if (!ttf.TTF_Init()) {
         sdl.SDL_Quit();
         return error.TTF_Init;
     }
@@ -221,20 +221,18 @@ fn printSDLError() void {
     }
 }
 
-pub const Image = ?*sdl.SDL_Surface;
-
 pub const TexturePolicy = enum {
     Repeat,
     Clamp,
     Mirrored,
 
     pub fn get_gl_policy(self: TexturePolicy) c_int {
-        return switch(self){
+        return switch (self) {
             .Repeat => gl.GL_REPEAT,
             .Mirrored => gl.GL_MIRRORED_REPEAT,
-            .Clamp => gl.GL_CLAMP_TO_EDGE, 
+            .Clamp => gl.GL_CLAMP_TO_EDGE,
         };
-    };
+    }
 };
 
 pub const SamplePolicy = enum {
@@ -246,7 +244,7 @@ pub const SamplePolicy = enum {
     LinearMipLinear,
 
     pub fn get_gl_policy(self: SamplePolicy) c_int {
-        return switch(self){
+        return switch (self) {
             .Nearest => gl.GL_NEAREST,
             .NearestMipNearest => gl.GL_NEAREST_MIPMAP_NEAREST,
             .NearestMipLinear => gl.GL_NEAREST_MIPMAP_LINEAR,
@@ -266,26 +264,27 @@ pub const TextureSettings = struct {
 
 pub const Texture = struct {
     id: u32,
-    settings: const TextureSettings,
+    settings: TextureSettings,
 };
 
-pub fn UploadImage(image: Image) !Texture {
+pub const Image = ?*sdl.SDL_Surface;
 
+pub fn UploadImage(image: Image) !Texture {
+    _ = image;
 }
 
 pub fn LoadImage(filename: [*c]const u8) !Image {
     const image = img.IMG_Load(filename);
-    if(image == null){
+    if (image == null) {
         return error.ImageLoad;
     }
     return image;
 }
 pub fn DestroyImage(image: Image) void {
-    if(image != null){
+    if (image != null) {
         sdl.SDL_DestroySurface(image);
     }
 }
-
 
 /// types of data that can exist in a vertex format.
 pub const VertexType = enum {

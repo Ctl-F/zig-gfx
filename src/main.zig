@@ -137,6 +137,11 @@ pub fn main() !void {
         .on_mouse_up = on_mouse_button_up,
     };
 
+    const image = gfx.LoadImage("Playful.png") catch val: {
+        break :val try gfx.LoadImage("zig-out/bin/Playful.png");
+    };
+    defer gfx.DestroyImage(image);
+
     gfx.SetMouseCaptured(true);
 
     while (context.running) {
