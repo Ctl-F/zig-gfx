@@ -102,8 +102,8 @@
 const std = @import("std");
 pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
 pub const gl = @cImport(@cInclude("glad/glad.h"));
-pub const ttf = @cImport(@cInclude("SDL3_ttf/SDL_ttf.h"));
-pub const img = @cImport(@cInclude("SDL3_image/SDL_image.h"));
+//pub const ttf = @cImport(@cInclude("SDL3_ttf/SDL_ttf.h"));
+//pub const img = @cImport(@cInclude("SDL3_image/SDL_image.h"));
 
 /// Represents a version of OpenGL (core = false for compatability profile)
 pub const GLVersion = struct {
@@ -137,10 +137,10 @@ pub fn Init(params: InitParams) !void {
         }
     }
 
-    if (!ttf.TTF_Init()) {
-        sdl.SDL_Quit();
-        return error.TTF_Init;
-    }
+    //if (!ttf.TTF_Init()) {
+    //    sdl.SDL_Quit();
+    //    return error.TTF_Init;
+    //}
 
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_MAJOR_VERSION, @intCast(params.version.major));
     _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_CONTEXT_MINOR_VERSION, @intCast(params.version.minor));
@@ -153,7 +153,7 @@ pub fn Init(params: InitParams) !void {
 
     if (window == null) {
         printSDLError();
-        ttf.TTF_Quit();
+        //ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_WindowInit;
     }
@@ -162,7 +162,7 @@ pub fn Init(params: InitParams) !void {
     if (context == null) {
         printSDLError();
         sdl.SDL_DestroyWindow(window);
-        ttf.TTF_Quit();
+        //ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_ContextCreate;
     }
@@ -171,7 +171,7 @@ pub fn Init(params: InitParams) !void {
         printSDLError();
         _ = sdl.SDL_GL_DestroyContext(context);
         sdl.SDL_DestroyWindow(window);
-        ttf.TTF_Quit();
+        //ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.SDL_BindContext;
     }
@@ -179,7 +179,7 @@ pub fn Init(params: InitParams) !void {
     if (gl.gladLoadGLLoader(@ptrCast(&sdl.SDL_GL_GetProcAddress)) == 0) {
         _ = sdl.SDL_GL_DestroyContext(context);
         sdl.SDL_DestroyWindow(window);
-        ttf.TTF_Quit();
+        //ttf.TTF_Quit();
         sdl.SDL_Quit();
         return error.GLAD_Load;
     }
@@ -195,7 +195,7 @@ pub fn Init(params: InitParams) !void {
 pub fn Quit() void {
     _ = sdl.SDL_GL_DestroyContext(context);
     sdl.SDL_DestroyWindow(window);
-    ttf.TTF_Quit();
+    //ttf.TTF_Quit();
     sdl.SDL_Quit();
 }
 
@@ -274,11 +274,12 @@ pub fn UploadImage(image: Image) !Texture {
 }
 
 pub fn LoadImage(filename: [*c]const u8) !Image {
-    const image = img.IMG_Load(filename);
-    if (image == null) {
+    //const image = img.IMG_Load(filename);
+    //if (image == null) {
+        _ = filename;
         return error.ImageLoad;
-    }
-    return image;
+    //}
+    //return image;
 }
 pub fn DestroyImage(image: Image) void {
     if (image != null) {
