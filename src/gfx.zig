@@ -103,7 +103,7 @@ const std = @import("std");
 pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
 pub const gl = @cImport(@cInclude("glad/glad.h"));
 //pub const ttf = @cImport(@cInclude("SDL3_ttf/SDL_ttf.h"));
-//pub const img = @cImport(@cInclude("SDL3_image/SDL_image.h"));
+pub const img = @cImport(@cInclude("stb_image.h"));
 
 /// Represents a version of OpenGL (core = false for compatability profile)
 pub const GLVersion = struct {
@@ -265,21 +265,73 @@ pub const TextureSettings = struct {
 pub const Texture = struct {
     id: u32,
     settings: TextureSettings,
+
+    pub inline fn bind_to_slot(self: Texture, slot: u32) void {
+        const cslot = gl.GL_TEXTURE0 + @as(c_int, @intCast(slot));
+        gl.glActiveTexture(@as(gl.GLenum, @intCast(cslot)));
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self.id);
+    }
 };
 
 pub const Image = ?*sdl.SDL_Surface;
 
-pub fn UploadImage(image: Image) !Texture {
-    _ = image;
+pub fn UploadImage(image: Image, settings: TextureSettings) !Texture {
+    var texture: Texture = Texture{ .id = 0, .settings = settings };
+
+    gl.glGenTextures(1, &texture.id);
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture.id);
+
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, settings.min_sample_policy.get_gl_policy());
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, settings.mag_sample_policy.get_gl_policy());
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, settings.texture_policy.get_gl_policy());
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, settings.texture_policy.get_gl_policy());
+
+    const i = image.?;
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, i.w, i.h, 0, gl.GL_BGRA, gl.GL_UNSIGNED_BYTE, i.pixels);
+
+    if (settings.gen_mipmaps) {
+        gl.glGenerateMipmap(gl.GL_TEXTURE_2D);
+    }
+
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0);
+
+    return texture;
+}
+
+pub fn DestroyTexture(texture: Texture) void {
+    gl.glDeleteTextures(1, texture.id);
 }
 
 pub fn LoadImage(filename: [*c]const u8) !Image {
-    //const image = img.IMG_Load(filename);
-    //if (image == null) {
-        _ = filename;
+    var x: c_int = 0;
+    var y: c_int = 0;
+    var ch: c_int = 0;
+
+    const image = img.stbi_load(filename, &x, &y, &ch, 4);
+
+    if (image == null) {
+        if (ShowSDLErrors) {
+            std.debug.print("Failed to load image `{s}`: {s}.\n", .{ filename, img.stbi_failure_reason() });
+        }
         return error.ImageLoad;
-    //}
-    //return image;
+    }
+    defer img.stbi_image_free(image);
+
+    const stagingImage: Image = sdl.SDL_CreateSurfaceFrom(x, y, sdl.SDL_PIXELFORMAT_RGBA32, image, x * 4);
+    if (stagingImage == null) {
+        printSDLError();
+        return error.StagingBufferFailure;
+    }
+    defer sdl.SDL_DestroySurface(stagingImage);
+
+    const finalImage = sdl.SDL_ConvertSurface(stagingImage, sdl.SDL_PIXELFORMAT_BGRA32);
+
+    if (finalImage == null) {
+        printSDLError();
+        return error.ImageBufferAllocation;
+    }
+
+    return finalImage;
 }
 pub fn DestroyImage(image: Image) void {
     if (image != null) {
@@ -570,6 +622,11 @@ pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
         },
         else => @compileError("Unsupported uniform type"),
     }
+}
+
+pub fn set_uniform_texture(location: i32, slot: u32, tex: Texture) void {
+    gl.glUniform1i(location, @intCast(slot));
+    tex.bind_to_slot(slot);
 }
 
 pub const EventTy = sdl.SDL_Event;

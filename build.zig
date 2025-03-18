@@ -34,10 +34,12 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.addCSourceFile(.{ .file = b.path("src/glad/src/glad.c"), .flags = &.{} });
+    exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_image.c"), .flags = &.{} });
+    exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_truetype.c"), .flags = &.{} });
+    exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_perlin.c"), .flags = &.{} });
+
     exe.linkSystemLibrary("SDL3");
     exe.linkSystemLibrary("GL");
-    //exe.linkSystemLibrary("SDL3_image");
-    //exe.linkSystemLibrary("SDL3_ttf");
     exe.linkLibC();
 
     exe.addIncludePath(b.path("src/glad/include/"));

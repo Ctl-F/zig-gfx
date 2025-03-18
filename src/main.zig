@@ -96,12 +96,13 @@ pub fn main() !void {
     var vfmt = gfx.VertexFormatBuffer{};
     try vfmt.add_attribute(gfx.VertexType.Float3); // position
     try vfmt.add_attribute(gfx.VertexType.Float3); // color
+    try vfmt.add_attribute(gfx.VertexType.Float2); // uv
 
     const vertices = [_]f32{
-        -0.5, 0.0, -0.5, 1.0, 0.0, 0.0,
-        0.5,  0.0, -0.5, 0.0, 1.0, 0.0,
-        -0.5, 0.0, 0.5,  0.0, 0.0, 1.0,
-        0.5,  0.0, 0.5,  1.0, 1.0, 1.0,
+        -0.5, 0.0, -0.5, 1.0, 0.0, 0.0, 0, 0,
+        0.5,  0.0, -0.5, 0.0, 1.0, 0.0, 1, 0,
+        -0.5, 0.0, 0.5,  0.0, 0.0, 1.0, 0, 1,
+        0.5,  0.0, 0.5,  1.0, 1.0, 1.0, 1, 1,
     };
     const indices = [_]u32{ 0, 1, 2, 1, 2, 3 };
 
@@ -113,7 +114,7 @@ pub fn main() !void {
     const projection = context.player.get_perspective(@as(f32, params.width) / @as(f32, params.height)); //gfx.mat4.createPerspective(3.1415926 / 2.0, @as(f32, params.width) / @as(f32, params.height), 0.01, 1000.0);
 
     //const view = gfx.mat4.createLookAt(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
-    const model = gfx.mat4.createScale(100, 0, 100); //gfx.mat4.scale(10, 10, 10);
+    const model = gfx.mat4.createScale(10, 0, 10); //gfx.mat4.scale(10, 10, 10);
     const shader = gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl", std.heap.page_allocator) catch |err| val: {
         if (err == error.FileNotFound) {
             break :val try gfx.Shader.create_from_file("zig-out/bin/vertex.glsl", "zig-out/bin/fragment.glsl", std.heap.page_allocator);
@@ -127,6 +128,7 @@ pub fn main() !void {
     const loc_u_Projection = gfx.get_uniform_location(shader, "u_Projection");
     const loc_u_View = gfx.get_uniform_location(shader, "u_View");
     const loc_u_Model = gfx.get_uniform_location(shader, "u_Model");
+    const loc_u_Albedo = gfx.get_uniform_location(shader, "u_Albedo");
 
     const eventHooks = EventHooksType{
         .on_quit = on_quit,
@@ -141,6 +143,14 @@ pub fn main() !void {
         break :val try gfx.LoadImage("zig-out/bin/Playful.png");
     };
     defer gfx.DestroyImage(image);
+
+    const textureSettings = gfx.TextureSettings{
+        .gen_mipmaps = true,
+        .mag_sample_policy = gfx.SamplePolicy.Nearest,
+        .min_sample_policy = gfx.SamplePolicy.Nearest,
+        .texture_policy = gfx.TexturePolicy.Repeat,
+    };
+    const texture = try gfx.UploadImage(image, textureSettings);
 
     gfx.SetMouseCaptured(true);
 
@@ -160,6 +170,7 @@ pub fn main() !void {
         gfx.set_uniform(gfx.mat4, loc_u_Projection, projection);
         gfx.set_uniform(gfx.mat4, loc_u_View, view);
         gfx.set_uniform(gfx.mat4, loc_u_Model, model);
+        gfx.set_uniform_texture(loc_u_Albedo, 0, texture);
 
         mesh.present(gfx.Primitive.Triangles);
 
