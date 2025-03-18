@@ -5,14 +5,18 @@
 /// We are "borrowing" the mat4 implementation
 /// from zlm. This library also isn't heavily optimized
 /// beyond using SIMD operations where convenient.
-
 const std = @import("std");
 
 pub const vec2 = @Vector(2, f32);
 pub const vec3 = @Vector(3, f32);
 pub const vec4 = @Vector(4, f32);
 
-pub fn dot(comptime T: type, a: T, b: T) f32 {
+pub fn dot(a: anytype, b: @TypeOf(a)) f32 {
+    comptime {
+        if (@typeInfo(@TypeOf(a)) != .vector) {
+            @compileError("dot() function requires vector types.");
+        }
+    }
     return @reduce(.Add, a * b);
 }
 
@@ -24,14 +28,20 @@ pub fn cross(a: vec3, b: vec3) vec3 {
     };
 }
 
-pub fn normalize(comptime T: type, a: T) T {
+pub fn normalize(a: anytype) @TypeOf(a) {
+    comptime {
+        if (@typeInfo(@TypeOf(a)) != .vector) {
+            @compileError("normalize() function requires vector type.");
+        }
+    }
+
     const len = @sqrt(dot(a, a));
 
-    if(len == 0.0) {
+    if (len == 0.0) {
         return @splat(0.0);
     }
 
-    const divisor: T = @splat(1.0 / len);
+    const divisor: @TypeOf(a) = @splat(1.0 / len);
     return a * divisor;
 }
 
@@ -106,8 +116,8 @@ pub const mat4 = extern struct {
     /// the camera is located at `eye` and will look into `direction`.
     /// `up` is the direction from the screen center to the upper screen border.
     pub fn createLook(eye: vec3, direction: vec3, up: vec3) Self {
-        const f = normalize(vec3, direction);
-        const s = normalize(vec3, cross(f, up));
+        const f = normalize(direction);
+        const s = normalize(cross(f, up));
         const u = cross(s, f);
 
         var result = Self.identity;
@@ -120,9 +130,9 @@ pub const mat4 = extern struct {
         result.fields[0][2] = -f[0];
         result.fields[1][2] = -f[1];
         result.fields[2][2] = -f[2];
-        result.fields[3][0] = -dot(vec3, s, eye);
-        result.fields[3][1] = -dot(vec3, u, eye);
-        result.fields[3][2] = dot(vec3, f, eye);
+        result.fields[3][0] = -dot(s, eye);
+        result.fields[3][1] = -dot(u, eye);
+        result.fields[3][2] = dot(f, eye);
         return result;
     }
 
@@ -160,7 +170,7 @@ pub const mat4 = extern struct {
         const cos = @cos(angle);
         const sin = @sin(angle);
 
-        const normalized = normalize(vec3, axis);
+        const normalized = normalize(axis);
         const x = normalized.x;
         const y = normalized.y;
         const z = normalized.z;
@@ -327,7 +337,7 @@ pub const quat = struct {
     }
 
     pub inline fn normalize(q: Self) Self {
-        const len_sq = dot(vec4, q.intern, q.intern);
+        const len_sq = dot(q.intern, q.intern);
 
         if (len_sq == 0) {
             return Self.identity;
@@ -389,7 +399,7 @@ pub const quat = struct {
         const q1 = a;
         var q2 = b;
 
-        var abdot = dot(vec4, q1.intern, q2.intern);
+        var abdot = dot(q1.intern, q2.intern);
 
         if (abdot < 0.0) {
             q2.intern *= @splat(-1);
@@ -420,6 +430,3 @@ pub const quat = struct {
 
     pub const identity = Self.init(0.0, 0.0, 0.0, 1.0);
 };
-
-
-

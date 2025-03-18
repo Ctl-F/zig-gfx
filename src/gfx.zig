@@ -102,7 +102,8 @@
 const std = @import("std");
 pub const sdl = @cImport(@cInclude("SDL3/SDL.h"));
 pub const gl = @cImport(@cInclude("glad/glad.h"));
-//pub const ttf = @cImport(@cInclude("SDL3_ttf/SDL_ttf.h"));
+pub const ttf = @cImport(@cInclude("stb_truetype.h"));
+pub const pck = @cImport(@cInclude("stb_rect_pack.h"));
 pub const img = @cImport(@cInclude("stb_image.h"));
 
 pub const vmath = @import("vmath.zig");
@@ -601,8 +602,8 @@ pub fn get_uniform_location(shader: Shader, name: [*c]const u8) i32 {
     return gl.glGetUniformLocation(shader.id, @ptrCast(name));
 }
 
-pub fn set_uniform(comptime ty: type, location: i32, value: ty) void {
-    switch (@typeInfo(ty)) {
+pub fn set_uniform(location: i32, value: anytype) void {
+    switch (@typeInfo(@TypeOf(value))) {
         std.builtin.Type.int => gl.glUniform1i(location, value),
         std.builtin.Type.float => gl.glUniform1f(location, value),
         std.builtin.Type.@"struct" => |s| {
@@ -628,6 +629,20 @@ pub fn set_uniform_texture(location: i32, slot: u32, tex: Texture) void {
 }
 
 pub const EventTy = sdl.SDL_Event;
+
+fn loadFileBinary(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    const file = try std.fs.cwd().openFile(path, .{ .read = true });
+    defer file.close();
+
+    const stat = try file.stat();
+    const buffer = try allocator.alloc(u8, stat.size);
+    _ = file.readAll(buffer) catch |err| {
+        allocator.free(buffer);
+        return err;
+    };
+
+    return buffer;
+}
 
 //--------------------------------------------
 // INPUT
@@ -701,7 +716,3 @@ pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
 pub fn SetMouseCaptured(capture: bool) void {
     _ = sdl.SDL_SetWindowRelativeMouseMode(window, capture);
 }
-
-
-
-
