@@ -4,35 +4,37 @@ const gfx = @import("gfx.zig");
 const gl = gfx.gl;
 const sdl = gfx.sdl;
 
+const vmt = @import("vmath.zig");
+
 const EventErrors = error{
     NullContext,
 };
 
 const Camera = struct {
-    position: gfx.vec3,
-    eye_offset: gfx.vec3,
-    orientation: gfx.Quat,
+    position: vmt.vec3,
+    eye_offset: vmt.vec3,
+    orientation: vmt.quat,
     fov: f32 = std.math.pi / 2.0,
     zNear: f32 = 0.01,
     zFar: f32 = 1000.0,
 
-    pub fn get_perspective(self: Camera, aspect: f32) gfx.mat4 {
-        return gfx.mat4.createPerspective(self.fov, aspect, self.zNear, self.zFar);
+    pub fn get_perspective(self: Camera, aspect: f32) vmt.mat4 {
+        return vmt.mat4.createPerspective(self.fov, aspect, self.zNear, self.zFar);
     }
-    pub fn get_view(self: Camera) gfx.mat4 {
+    pub fn get_view(self: Camera) vmt.mat4 {
         // How to get look direction
         const forward = self.get_forward();
         const eye = self.position + self.eye_offset;
         const center = eye + forward;
-        return gfx.mat4.createLookAt(eye, center, gfx.vec3{ 0, 1, 0 });
+        return vmt.mat4.createLookAt(eye, center, vmt.vec3{ 0, 1, 0 });
     }
 
-    pub fn get_forward(self: Camera) gfx.vec3 {
-        return gfx.Quat.rotate_vec3(self.orientation, gfx.vec3{ 0, 0, -1 });
+    pub fn get_forward(self: Camera) vmt.vec3 {
+        return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 0, 0, -1 });
     }
 
-    pub fn get_right(self: Camera) gfx.vec3 {
-        return gfx.Quat.rotate_vec3(self.orientation, gfx.vec3{ 1, 0, 0 });
+    pub fn get_right(self: Camera) vmt.vec3 {
+        return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 1, 0, 0 });
     }
 };
 
@@ -88,8 +90,8 @@ pub fn main() !void {
         .running = true,
         .player = Camera{
             .position = @splat(0.0),
-            .eye_offset = gfx.vec3{ 0, 1, 0 },
-            .orientation = gfx.Quat.identity,
+            .eye_offset = vmt.vec3{ 0, 1, 0 },
+            .orientation = vmt.quat.identity,
         },
     };
 
@@ -114,7 +116,7 @@ pub fn main() !void {
     const projection = context.player.get_perspective(@as(f32, params.width) / @as(f32, params.height)); //gfx.mat4.createPerspective(3.1415926 / 2.0, @as(f32, params.width) / @as(f32, params.height), 0.01, 1000.0);
 
     //const view = gfx.mat4.createLookAt(gfx.vec3{ 0, 1, 0 }, gfx.vec3{ 0, 1, -1 }, gfx.vec3{ 0, 1, 0 });
-    const model = gfx.mat4.createScale(10, 0, 10); //gfx.mat4.scale(10, 10, 10);
+    const model = vmt.mat4.createScale(10, 0, 10); //gfx.mat4.scale(10, 10, 10);
     const shader = gfx.Shader.create_from_file("vertex.glsl", "fragment.glsl", std.heap.page_allocator) catch |err| val: {
         if (err == error.FileNotFound) {
             break :val try gfx.Shader.create_from_file("zig-out/bin/vertex.glsl", "zig-out/bin/fragment.glsl", std.heap.page_allocator);
@@ -167,9 +169,9 @@ pub fn main() !void {
 
         shader.bind();
 
-        gfx.set_uniform(gfx.mat4, loc_u_Projection, projection);
-        gfx.set_uniform(gfx.mat4, loc_u_View, view);
-        gfx.set_uniform(gfx.mat4, loc_u_Model, model);
+        gfx.set_uniform(loc_u_Projection, projection);
+        gfx.set_uniform(loc_u_View, view);
+        gfx.set_uniform(loc_u_Model, model);
         gfx.set_uniform_texture(loc_u_Albedo, 0, texture);
 
         mesh.present(gfx.Primitive.Triangles);
@@ -200,16 +202,16 @@ fn process_player_move(ctx: *Context) void {
     const iForward: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Forward))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Back)]));
     const iRight: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Right))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Left)]));
 
-    const iCombined = gfx.vec3{ @floatFromInt(iRight), 0, @floatFromInt(-iForward) };
+    const iCombined = vmt.vec3{ @floatFromInt(iRight), 0, @floatFromInt(-iForward) };
 
-    if (@abs(gfx.dot(gfx.vec3, iCombined, iCombined)) <= std.math.floatEps(f32)) {
+    if (@abs(vmt.dot(iCombined, iCombined)) <= std.math.floatEps(f32)) {
         return;
     }
 
-    const inputRaw = gfx.normalize(gfx.vec3, iCombined);
-    var velocity = gfx.Quat.rotate_vec3(ctx.player.orientation, inputRaw);
+    const inputRaw = vmt.normalize(iCombined);
+    var velocity = vmt.quat.rotate_vec3(ctx.player.orientation, inputRaw);
     velocity[1] = 0;
-    velocity = gfx.normalize(gfx.vec3, velocity) * @as(gfx.vec3, @splat(ctx.settings.player_speed));
+    velocity = vmt.normalize(velocity) * @as(vmt.vec3, @splat(ctx.settings.player_speed));
 
     ctx.player.position += velocity;
 }
@@ -289,17 +291,17 @@ fn on_mouse_move(event: gfx.EventTy, context: ?*Context) EventErrors!void {
 
         var orientation = ctx.player.orientation;
 
-        const yaw = gfx.Quat.angle_axis(-delta_x, gfx.vec3{ 0, 1, 0 });
+        const yaw = vmt.quat.angle_axis(-delta_x, vmt.vec3{ 0, 1, 0 });
 
-        orientation = gfx.Quat.normalize(gfx.Quat.mul(yaw, orientation));
+        orientation = vmt.quat.normalize(vmt.quat.mul(yaw, orientation));
 
-        const rightAxis = gfx.Quat.rotate_vec3(orientation, gfx.vec3{ 1, 0, 0 });
+        const rightAxis = vmt.quat.rotate_vec3(orientation, vmt.vec3{ 1, 0, 0 });
 
-        const pitch = gfx.Quat.angle_axis(-delta_y, rightAxis);
+        const pitch = vmt.quat.angle_axis(-delta_y, rightAxis);
 
-        orientation = gfx.Quat.normalize(gfx.Quat.mul(pitch, orientation));
+        orientation = vmt.quat.normalize(vmt.quat.mul(pitch, orientation));
 
-        const forward = gfx.normalize(gfx.vec3, gfx.Quat.rotate_vec3(orientation, gfx.vec3{ 0, 0, -1 }));
+        const forward = vmt.normalize(vmt.quat.rotate_vec3(orientation, vmt.vec3{ 0, 0, -1 }));
         const theta = std.math.asin(forward[1]); // angle of forward vector
 
         const MAX = std.math.degreesToRadians(75.0);
@@ -315,11 +317,12 @@ fn on_mouse_move(event: gfx.EventTy, context: ?*Context) EventErrors!void {
 
         //std.debug.print("\r\x1b[2K Th: {d}, Th': {d} -> dif: {d}  [{d}, {d}]", .{ theta, theta_p, dif, MIN, MAX });
 
-        const correction = gfx.Quat.angle_axis(dif, rightAxis);
-        orientation = gfx.Quat.mul(correction, orientation);
+        const correction = vmt.quat.angle_axis(dif, rightAxis);
+        orientation = vmt.quat.mul(correction, orientation);
 
-        ctx.player.orientation = gfx.Quat.normalize(gfx.Quat.slerp(ctx.player.orientation, orientation, ctx.settings.camera_smoothing));
+        ctx.player.orientation = vmt.quat.normalize(vmt.quat.slerp(ctx.player.orientation, orientation, ctx.settings.camera_smoothing));
         return;
     }
     return error.NullContext;
 }
+
