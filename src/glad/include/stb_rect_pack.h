@@ -78,9 +78,9 @@
 extern "C" {
 #endif
 
-typedef struct stbrp_context stbrp_context;
-typedef struct stbrp_node    stbrp_node;
-typedef struct stbrp_rect    stbrp_rect;
+typedef struct stbrp_context_t stbrp_context;
+typedef struct stbrp_node_t    stbrp_node;
+typedef struct stbrp_rect_t    stbrp_rect;
 
 typedef int            stbrp_coord;
 
@@ -112,7 +112,7 @@ STBRP_DEF int stbrp_pack_rects (stbrp_context *context, stbrp_rect *rects, int n
 // The function returns 1 if all of the rectangles were successfully
 // packed and 0 otherwise.
 
-struct stbrp_rect
+struct stbrp_rect_t
 {
    // reserved for your use:
    int            id;
@@ -172,13 +172,13 @@ enum
 // the details of the following structures don't matter to you, but they must
 // be visible so you can handle the memory allocations for them
 
-struct stbrp_node
+struct stbrp_node_t
 {
    stbrp_coord  x,y;
    stbrp_node  *next;
 };
 
-struct stbrp_context
+struct stbrp_context_t
 {
    int width;
    int height;

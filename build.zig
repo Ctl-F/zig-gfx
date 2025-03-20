@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
     exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_image.c"), .flags = &.{} });
     exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_truetype.c"), .flags = &.{} });
     exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_perlin.c"), .flags = &.{} });
+    exe.addCSourceFile(.{ .file = b.path("src/glad/src/stb_rect_pack.c"), .flags = &.{} });
 
     exe.linkSystemLibrary("SDL3");
     exe.linkSystemLibrary("GL");

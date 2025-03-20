@@ -125,12 +125,24 @@ pub fn main() !void {
         }
     };
 
+    const text_shader = gfx.Shader.create_from_file("text_vertex.glsl", "text_fragment.glsl", std.heap.page_allocator) catch |err| val: {
+        if (err == error.FileNotFound) {
+            break :val try gfx.Shader.create_from_file("zig-out/bin/text_vertex.glsl", "zig-out/bin/text_fragment.glsl", std.heap.page_allocator);
+        } else {
+            return err;
+        }
+    };
+
+    defer text_shader.destroy();
     defer shader.destroy();
 
     const loc_u_Projection = gfx.get_uniform_location(shader, "u_Projection");
     const loc_u_View = gfx.get_uniform_location(shader, "u_View");
     const loc_u_Model = gfx.get_uniform_location(shader, "u_Model");
     const loc_u_Albedo = gfx.get_uniform_location(shader, "u_Albedo");
+
+    const loc_u_TextProjection = gfx.get_uniform_location(text_shader, "u_Projection");
+    const loc_u_TextAtlas = gfx.get_uniform_location(text_shader, "u_Atlas");
 
     const eventHooks = EventHooksType{
         .on_quit = on_quit,
@@ -145,6 +157,21 @@ pub fn main() !void {
         break :val try gfx.LoadImage("zig-out/bin/Playful.png");
     };
     defer gfx.DestroyImage(image);
+
+    const font_data = gfx.LoadBinaryFile(std.heap.page_allocator, "8bitOperatorPlus-Regular.ttf") catch |err| val: {
+        if (err == error.FileNotFound) {
+            break :val try gfx.LoadBinaryFile(std.heap.page_allocator, "zig-out/bin/8bitOperatorPlus-Regular.ttf");
+        } else {
+            return err;
+        }
+    };
+
+    const fontConfig = gfx.FontAtlasConfig{
+        .font_size = 16.0,
+        .oversample = 0,
+    };
+
+    var textRenderer = try gfx.TextRenderer.init_with_defaults(std.heap.page_allocator, font_data, fontConfig, vmt.vec2{ @floatFromInt(params.width), @floatFromInt(params.height) });
 
     const textureSettings = gfx.TextureSettings{
         .gen_mipmaps = true,
@@ -175,6 +202,31 @@ pub fn main() !void {
         gfx.set_uniform_texture(loc_u_Albedo, 0, texture);
 
         mesh.present(gfx.Primitive.Triangles);
+
+        textRenderer.begin_text_pass();
+        {
+            var nextPos = try textRenderer.add_text(vmt.vec2{ 10, 32 }, "Hello ", vmt.vec3{ 1, 1, 1 });
+            nextPos = try textRenderer.add_text(nextPos, "World", vmt.vec3{ 1, 0, 0 });
+
+            nextPos = vmt.vec2{ 10, 48 };
+            nextPos = try textRenderer.add_text(nextPos, "(X, Y, Z): (", vmt.vec3{ 1, 1, 1 });
+
+            var buffer: [128]u8 = undefined;
+            var str = try std.fmt.bufPrint(&buffer, "{d:.2}", .{context.player.position[0]});
+            nextPos = try textRenderer.add_text(nextPos, str, vmt.vec3{ 1, 0, 0 });
+            nextPos = try textRenderer.add_text(nextPos, ", ", vmt.vec3{ 1, 1, 1 });
+            str = try std.fmt.bufPrint(&buffer, "{d:.2}", .{context.player.position[1]});
+            nextPos = try textRenderer.add_text(nextPos, str, vmt.vec3{ 0, 1, 0 });
+            nextPos = try textRenderer.add_text(nextPos, ", ", vmt.vec3{ 1, 1, 1 });
+            str = try std.fmt.bufPrint(&buffer, "{d:.2}", .{context.player.position[2]});
+            nextPos = try textRenderer.add_text(nextPos, str, vmt.vec3{ 0, 0, 1 });
+            nextPos = try textRenderer.add_text(nextPos, ")", vmt.vec3{ 1, 1, 1 });
+        }
+        try textRenderer.end_text_pass();
+
+        text_shader.bind();
+        gfx.set_uniform(loc_u_TextProjection, textRenderer.projection_mat);
+        textRenderer.render(loc_u_TextAtlas, 0);
 
         gfx.SwapBuffers();
         gfx.DebugPrintGLErrors();
@@ -325,4 +377,3 @@ fn on_mouse_move(event: gfx.EventTy, context: ?*Context) EventErrors!void {
     }
     return error.NullContext;
 }
-

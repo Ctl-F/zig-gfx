@@ -234,6 +234,11 @@ pub const TexturePolicy = enum {
     }
 };
 
+pub const TextureFormat = enum {
+    RGBA, // default for 99% of textures
+    Mono, // specifically for font atlases (allocated as monochrome bitmaps)
+};
+
 pub const SamplePolicy = enum {
     Nearest,
     NearestMipNearest,
@@ -259,6 +264,7 @@ pub const TextureSettings = struct {
     min_sample_policy: SamplePolicy,
     mag_sample_policy: SamplePolicy,
     gen_mipmaps: bool = true,
+    format: TextureFormat = TextureFormat.RGBA,
 };
 
 pub const Texture = struct {
@@ -275,6 +281,10 @@ pub const Texture = struct {
 pub const Image = ?*sdl.SDL_Surface;
 
 pub fn UploadImage(image: Image, settings: TextureSettings) !Texture {
+    return UploadImagePixels(image.?.pixels, @intCast(image.?.w), @intCast(image.?.h), settings);
+}
+
+pub fn UploadImagePixels(pixels: ?*anyopaque, width: u32, height: u32, settings: TextureSettings) !Texture {
     var texture: Texture = Texture{ .id = 0, .settings = settings };
 
     gl.glGenTextures(1, &texture.id);
@@ -285,8 +295,12 @@ pub fn UploadImage(image: Image, settings: TextureSettings) !Texture {
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, settings.texture_policy.get_gl_policy());
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, settings.texture_policy.get_gl_policy());
 
-    const i = image.?;
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, i.w, i.h, 0, gl.GL_BGRA, gl.GL_UNSIGNED_BYTE, i.pixels);
+    const iFmt, const eFmt = switch (settings.format) {
+        .Mono => .{ gl.GL_RED, gl.GL_RED },
+        .RGBA => .{ gl.GL_RGBA8, gl.GL_BGRA },
+    };
+
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, @intCast(iFmt), @intCast(width), @intCast(height), 0, @intCast(eFmt), gl.GL_UNSIGNED_BYTE, pixels);
 
     if (settings.gen_mipmaps) {
         gl.glGenerateMipmap(gl.GL_TEXTURE_2D);
@@ -630,8 +644,246 @@ pub fn set_uniform_texture(location: i32, slot: u32, tex: Texture) void {
 
 pub const EventTy = sdl.SDL_Event;
 
-fn loadFileBinary(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    const file = try std.fs.cwd().openFile(path, .{ .read = true });
+pub const FontAtlasConfig = struct {
+    width: u32 = 512,
+    height: u32 = 512,
+    font_size: f32 = 32.0,
+    begin_char: u8 = ' ',
+    end_char: u8 = '~',
+    oversample: u32 = 2,
+};
+
+pub const FontBuffer = struct {
+    atlas_data: []u8,
+    char_data: []ttf.stbtt_packedchar,
+    config: FontAtlasConfig,
+    /// returns the visual glyph (quad info) for the given character
+    /// along with the position of the next character
+    pub fn get_glyph(self: FontBuffer, char: u8, loc: vec2) !struct { VisualGlyph, ?vec2 } {
+        if (char < self.config.begin_char or char > self.config.end_char) {
+            return error.CharOutOfRange;
+        }
+
+        var quad: ttf.stbtt_aligned_quad = undefined;
+        var cur_x, var cur_y = loc;
+
+        ttf.stbtt_GetPackedQuad(@ptrCast(self.char_data), @intCast(self.config.width), @intCast(self.config.height), @intCast(char - self.config.begin_char), &cur_x, &cur_y, &quad, 1);
+
+        //std.debug.print("{}({d}, {d}) -> ({d}, {d})\n", .{ char, loc[0], loc[1], cur_x, cur_y });
+
+        return .{
+            VisualGlyph{
+                .top_left = vec2{ quad.x0, quad.y0 },
+                .bottom_right = vec2{ quad.x1, quad.y1 },
+                .uv0 = vec2{ quad.s0, quad.t0 },
+                .uv1 = vec2{ quad.s1, quad.t1 },
+            },
+            vec2{ cur_x, cur_y },
+        };
+    }
+};
+
+pub const VertexList = std.ArrayList(f32);
+pub const IndexList = std.ArrayList(u32);
+
+pub const TextRenderer = struct {
+    const DEFAULT_QUAD_COUNT = 100;
+    const DEFAULT_VERTEX_ALLOCATION_COUNT = DEFAULT_QUAD_COUNT * 4;
+    const DEFAULT_INDEX_ALLOCATION_COUNT = DEFAULT_QUAD_COUNT * 6;
+
+    const Self = @This();
+
+    fontBuffer: FontBuffer,
+    vertexFormat: VertexFormatBuffer,
+    allocator: std.mem.Allocator,
+    vertices: VertexList,
+    indices: IndexList,
+    textMesh: Mesh,
+    fontAtlas: Texture,
+    projection_mat: mat4,
+    screen_size: vec2,
+
+    pub fn init_with_defaults(allocator: std.mem.Allocator, fontData: []u8, fontConfig: FontAtlasConfig, orthoSize: vec2) !Self {
+        var tr: Self = undefined;
+
+        tr.allocator = allocator;
+        tr.fontBuffer = try AllocateFontBuffer(allocator, fontConfig);
+
+        PackFontAtlas(fontData, &tr.fontBuffer) catch |err| {
+            FreeFontBuffer(allocator, tr.fontBuffer);
+            return err;
+        };
+
+        tr.vertices = VertexList.init(allocator);
+
+        tr.vertices.ensureTotalCapacity(DEFAULT_VERTEX_ALLOCATION_COUNT) catch |err| {
+            FreeFontBuffer(allocator, tr.fontBuffer);
+            tr.vertices.deinit();
+            return err;
+        };
+
+        tr.indices = IndexList.init(allocator);
+        tr.indices.ensureTotalCapacity(DEFAULT_INDEX_ALLOCATION_COUNT) catch |err| {
+            FreeFontBuffer(allocator, tr.fontBuffer);
+            tr.vertices.deinit();
+            tr.indices.deinit();
+            return err;
+        };
+
+        tr.vertexFormat = VertexFormatBuffer{};
+        try tr.vertexFormat.add_attribute(VertexType.Float3); // position
+        try tr.vertexFormat.add_attribute(VertexType.Float2); // uv
+        try tr.vertexFormat.add_attribute(VertexType.Float3); // glyph color
+
+        const textureConfig = TextureSettings{
+            .gen_mipmaps = false,
+            .mag_sample_policy = SamplePolicy.Nearest,
+            .min_sample_policy = SamplePolicy.Nearest,
+            .texture_policy = TexturePolicy.Repeat,
+            .format = TextureFormat.Mono,
+        };
+        tr.fontAtlas = UploadImagePixels(tr.fontBuffer.atlas_data.ptr, fontConfig.width, fontConfig.height, textureConfig) catch |err| {
+            FreeFontBuffer(allocator, tr.fontBuffer);
+            tr.vertices.deinit();
+            tr.indices.deinit();
+            return err;
+        };
+
+        tr.textMesh = Mesh.init();
+
+        tr.screen_size = orthoSize;
+
+        tr.projection_mat = vmath.mat4.createOrthogonal(0, orthoSize[0], orthoSize[1], 0, 0.01, 100.0);
+        //tr.projection_mat = vmath.mat4.createOrthogonal(0, orthoSize[0], 0, orthoSize[1], 0.01, 100.0);
+
+        return tr;
+    }
+
+    pub fn begin_text_pass(self: *Self) void {
+        self.vertices.clearRetainingCapacity();
+        self.indices.clearRetainingCapacity();
+    }
+
+    inline fn write_standard_vertex(position: vec3, uv: vec2, color: vec3, vertex_span: *[8]f32) void {
+        vertex_span[0] = position[0];
+        vertex_span[1] = position[1];
+        vertex_span[2] = position[2];
+        vertex_span[3] = uv[0];
+        vertex_span[4] = uv[1];
+        vertex_span[5] = color[0];
+        vertex_span[6] = color[1];
+        vertex_span[7] = color[2];
+    }
+
+    pub fn add_char(self: *Self, char: u8, base_position: vec2, position: vec2, color: vec3) !vec2 {
+        const glyph, const nextCursor = try switch (char) {
+            '\n', '\r', '\t' => self.fontBuffer.get_glyph('|', position),
+            else => self.fontBuffer.get_glyph(char, position),
+        };
+
+        if (char == '\n') {
+            return vec2{ base_position[0], glyph.bottom_right[1] + 2 };
+        } else if (char == '\t') {
+            const cur = nextCursor orelse position;
+            return vec2{ cur[0] + 2 * (glyph.bottom_right[0] - glyph.top_left[0]), cur[1] };
+        } else if (char == '\r') {
+            return vec2{ base_position[0], position[1] };
+        }
+
+        const floats_per_vertex = self.vertexFormat.stride / @sizeOf(f32);
+
+        const vertex_length = self.vertices.items.len / floats_per_vertex;
+        //const index_length = self.indices.items.len;
+
+        const vspan: []f32 = try self.vertices.addManyAsSlice(4 * floats_per_vertex);
+        const ispan: []u32 = try self.indices.addManyAsSlice(6);
+
+        //std.debug.print("new-verts: {d}:{d}, new-ind: {d}:{d}\n", .{ vspan.len, vertex_length, ispan.len, index_length });
+
+        write_standard_vertex(vec3{ glyph.top_left[0], glyph.top_left[1], -1 }, glyph.uv0, color, vspan[0..8]);
+        write_standard_vertex(vec3{ glyph.bottom_right[0], glyph.top_left[1], -1 }, vec2{ glyph.uv1[0], glyph.uv0[1] }, color, vspan[8..16]);
+        write_standard_vertex(vec3{ glyph.bottom_right[0], glyph.bottom_right[1], -1 }, glyph.uv1, color, vspan[16..24]);
+        write_standard_vertex(vec3{ glyph.top_left[0], glyph.bottom_right[1], -1 }, vec2{ glyph.uv0[0], glyph.uv1[1] }, color, vspan[24..32]);
+
+        ispan[0] = @intCast(vertex_length);
+        ispan[1] = @intCast(vertex_length + 1);
+        ispan[2] = @intCast(vertex_length + 3);
+        ispan[3] = @intCast(vertex_length + 3);
+        ispan[4] = @intCast(vertex_length + 1);
+        ispan[5] = @intCast(vertex_length + 2);
+
+        return nextCursor orelse position;
+    }
+
+    pub fn add_text(self: *Self, position: vec2, text: []const u8, color: vec3) !vec2 {
+        var cursor = position;
+
+        for (text) |char| {
+            cursor = try self.add_char(char, position, cursor, color);
+        }
+
+        return cursor;
+    }
+
+    pub fn end_text_pass(self: *Self) !void {
+        try self.textMesh.upload(self.vertices.items, self.indices.items, self.vertexFormat);
+    }
+
+    pub fn render(self: Self, shader_location_for_atlas: i32, slot_for_atlas: u32) void {
+        gl.glEnable(gl.GL_BLEND);
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
+
+        set_uniform_texture(shader_location_for_atlas, slot_for_atlas, self.fontAtlas);
+        self.textMesh.present(Primitive.Triangles);
+
+        gl.glDisable(gl.GL_BLEND);
+    }
+};
+
+pub const VisualGlyph = struct {
+    top_left: vec2,
+    bottom_right: vec2,
+    uv0: vec2,
+    uv1: vec2,
+};
+
+pub fn AllocateFontBuffer(allocator: std.mem.Allocator, config: FontAtlasConfig) !FontBuffer {
+    const buffer = try allocator.alloc(u8, config.width * config.height);
+    const charbuf = allocator.alloc(ttf.stbtt_packedchar, (config.end_char - config.begin_char + 1)) catch |err| {
+        allocator.free(buffer);
+        return err;
+    };
+    return FontBuffer{
+        .atlas_data = buffer,
+        .char_data = charbuf,
+        .config = config,
+    };
+}
+
+pub fn FreeFontBuffer(allocator: std.mem.Allocator, buffer: FontBuffer) void {
+    allocator.free(buffer.char_data);
+    allocator.free(buffer.atlas_data);
+}
+
+pub fn PackFontAtlas(font: []u8, buffer: *FontBuffer) !void {
+    var ctx: ttf.stbtt_pack_context = undefined;
+
+    if (ttf.stbtt_PackBegin(&ctx, @ptrCast(buffer.atlas_data.ptr), @intCast(buffer.config.width), @intCast(buffer.config.height), 0, 1, null) == 0) {
+        return error.PackingFailure;
+    }
+    defer ttf.stbtt_PackEnd(&ctx);
+
+    if (buffer.config.oversample > 0) {
+        ttf.stbtt_PackSetOversampling(&ctx, @intCast(buffer.config.oversample), @intCast(buffer.config.oversample));
+    }
+
+    if (ttf.stbtt_PackFontRange(&ctx, @ptrCast(font.ptr), 0, buffer.config.font_size, @intCast(buffer.config.begin_char), @intCast(buffer.config.end_char - buffer.config.begin_char + 1), @ptrCast(buffer.char_data.ptr)) == 0) {
+        return error.PackingFailure;
+    }
+}
+
+pub fn LoadBinaryFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    const file = try std.fs.cwd().openFile(path, std.fs.File.OpenFlags{ .mode = .read_only });
     defer file.close();
 
     const stat = try file.stat();
