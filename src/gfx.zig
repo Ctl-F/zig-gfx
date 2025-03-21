@@ -481,17 +481,11 @@ pub const Mesh = struct {
 pub const Shader = struct {
     id: u32,
 
-    pub fn create_from_file(vertex_filename: []const u8, fragment_filename: []const u8, allocator: std.mem.Allocator) !Shader {
-        const vsource = try load_file_text(vertex_filename, allocator);
-        defer allocator.free(vsource);
-
-        const fsource = try load_file_text(fragment_filename, allocator);
-        defer allocator.free(fsource);
-
-        const vshd = try compile_shader(vsource, gl.GL_VERTEX_SHADER);
+    pub fn create_from_source(vertex_source: []const u8, fragment_source: []const u8) !Shader {
+        const vshd = try compile_shader(vertex_source, gl.GL_VERTEX_SHADER);
         defer gl.glDeleteShader(vshd);
 
-        const fshd = try compile_shader(fsource, gl.GL_FRAGMENT_SHADER);
+        const fshd = try compile_shader(fragment_source, gl.GL_FRAGMENT_SHADER);
         defer gl.glDeleteShader(fshd);
 
         const progId: u32 = gl.glCreateProgram();
@@ -516,6 +510,16 @@ pub const Shader = struct {
         }
 
         return Shader{ .id = @intCast(progId) };
+    }
+
+    pub fn create_from_file(vertex_filename: []const u8, fragment_filename: []const u8, allocator: std.mem.Allocator) !Shader {
+        const vsource = try load_file_text(vertex_filename, allocator);
+        defer allocator.free(vsource);
+
+        const fsource = try load_file_text(fragment_filename, allocator);
+        defer allocator.free(fsource);
+
+        return create_from_source(vsource, fsource);
     }
 
     pub fn destroy(self: Shader) void {
