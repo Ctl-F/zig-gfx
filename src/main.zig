@@ -62,12 +62,13 @@ const InputContext = struct {
 
 const Context = struct {
     running: bool,
+    delta_time: f64,
     player: Camera,
     input: InputContext = InputContext{},
     settings: Settings = Settings{
         .camera_sensitivity = 0.01,
         .camera_smoothing = 0.2,
-        .player_speed = 0.001,
+        .player_speed = 10.0,
     },
 };
 
@@ -88,6 +89,7 @@ pub fn main() !void {
 
     var context = Context{
         .running = true,
+        .delta_time = 0.0,
         .player = Camera{
             .position = @splat(0.0),
             .eye_offset = vmt.vec3{ 0, 1, 0 },
@@ -183,9 +185,12 @@ pub fn main() !void {
 
     gfx.SetMouseCaptured(true);
 
+    var frameTimer = gfx.Timer.Now();
     while (context.running) {
         @memcpy(context.input.lastFrame[0..context.input.lastFrame.len], context.input.currentFrame[0..context.input.currentFrame.len]);
-        try EventHooks.PollEvents(&eventHooks, &context);
+
+        context.delta_time = frameTimer.delta_time();
+        try EventHooks.PollEvents(eventHooks, &context);
 
         gl.glClearColor(0.0, 0.0, 0.01, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT);
@@ -250,7 +255,8 @@ fn initialize_input(ctx: *Context) void {
     }
 }
 
-fn process_player_move(ctx: *Context, dt: f64) void {
+fn process_player_move(ctx: *Context) void {
+    const delta_time: f32 = @floatCast(ctx.delta_time);
     const iForward: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Forward))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Back)]));
     const iRight: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Right))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Left)]));
 
@@ -263,9 +269,9 @@ fn process_player_move(ctx: *Context, dt: f64) void {
     const inputRaw = vmt.normalize(iCombined);
     var velocity = vmt.quat.rotate_vec3(ctx.player.orientation, inputRaw);
     velocity[1] = 0;
-    velocity = vmt.normalize(velocity) * @as(vmt.vec3, @splat(ctx.settings.player_speed));
+    velocity = vmt.normalize(velocity) * @as(vmt.vec3, @splat(ctx.settings.player_speed * delta_time));
 
-    ctx.player.position += velocity * 10.0 * dt;
+    ctx.player.position += velocity;
 }
 
 fn on_key_released(event: gfx.EventTy, context: ?*Context) EventErrors!void {

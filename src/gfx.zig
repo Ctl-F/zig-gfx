@@ -900,33 +900,56 @@ pub fn LoadBinaryFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return buffer;
 }
 
-pub Timer = struct {
+pub const Timer = struct {
+    const Self = @This();
+
     reference_time_ns: u64,
     initial_time_ns: u64,
 
-    const NS_TO_SECONDS = 1.0 / 1e9;
-    const MS_TO_SECONDS = 1.0 / 1e6;
-    const NS_TO_MS = 1.0 / 1e3;
+    const NS_TO_SECONDS: f64 = 1.0 / 1e9;
+    const MS_TO_SECONDS: f64 = 1.0 / 1e6;
+    const NS_TO_MS: u64 = 1e3;
 
-    pub fn Now() Timer {
+    pub fn Now() Self {
         const time: u64 = sdl.SDL_GetTicksNS();
-        return Timer {
+        return Self{
             .reference_time_ns = time,
             .initial_time_ns = time,
         };
     }
-    
+
     /// returns the elapsed nanoseconds since the last
     /// call to elapsed* function or creation, whichever is most recent.
-    pub fn elapsed(self: *Timer) u64 {
+    pub fn elapsed(self: *Self) u64 {
         const now: u64 = sdl.SDL_GetTicksNS();
         const delta = now - self.reference_time_ns;
         self.reference_time_ns = now;
         return delta;
     }
 
-    pub fn elapsed_ms(self: *Timer) u64 {
+    pub fn elapsed_ms(self: *Self) u64 {
+        const elapsed_ns = self.elapsed();
+        return elapsed_ns / NS_TO_MS;
+    }
+
+    pub fn delta_time(self: *Self) f64 {
+        const elapsed_ns = self.elapsed();
+        return @as(f64, @floatFromInt(elapsed_ns)) * NS_TO_SECONDS;
+    }
+
+    pub fn total_elapsed(self: Self) u64 {
         const now: u64 = sdl.SDL_GetTicksNS();
+        return now - self.initial_time_ns;
+    }
+
+    pub fn total_elapsed_ms(self: Self) u64 {
+        const elapsed_ns = self.total_elapsed();
+        return elapsed_ns / NS_TO_MS;
+    }
+
+    pub fn total_delta_time(self: Self) f64 {
+        const elapsed_ns = self.total_elapsed();
+        return @as(f64, @floatFromInt(elapsed_ns)) * NS_TO_SECONDS;
     }
 };
 
@@ -950,12 +973,10 @@ pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
             on_mouse_down: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
             on_mouse_up: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
             on_mouse_move: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
-            last_frame_time: u64 = 0,
-            current_frame_time: u64 = 0,
-            delta_time: f64 = 0,
+            on_mouse_scroll: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
         };
 
-        pub fn PollEvents(hooks: *EventHooks, ctx: ?*ctx_t) err!void {
+        pub fn PollEvents(hooks: EventHooks, ctx: ?*ctx_t) err!void {
             comptime {
                 if (@typeInfo(err) != .error_set) {
                     @compileError("Expected error set as parameter, 'err' parameter is not an errorset.");
@@ -992,6 +1013,11 @@ pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
                     },
                     sdl.SDL_EVENT_MOUSE_MOTION => {
                         if (hooks.on_mouse_move) |hook| {
+                            try hook(event, ctx);
+                        }
+                    },
+                    sdl.SDL_EVENT_MOUSE_WHEEL => {
+                        if (hooks.on_mouse_scroll) |hook| {
                             try hook(event, ctx);
                         }
                     },
