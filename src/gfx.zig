@@ -920,14 +920,24 @@ pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
             on_mouse_down: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
             on_mouse_up: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
             on_mouse_move: ?*const fn (event: EventTy, ctx: ?*ctx_t) err!void = null,
+            last_frame_time: u64 = 0,
+            current_frame_time: u64 = 0,
+            delta_time: f64 = 0,
         };
 
-        pub fn PollEvents(hooks: EventHooks, ctx: ?*ctx_t) err!void {
+        pub fn PollEvents(hooks: *EventHooks, ctx: ?*ctx_t) err!void {
             comptime {
                 if (@typeInfo(err) != .error_set) {
                     @compileError("Expected error set as parameter, 'err' parameter is not an errorset.");
                 }
             }
+
+            const CONVERT: f64 = 1 / 1e9;
+
+            hooks.current_frame_time = sdl.SDL_GetTicksNS();
+            hooks.delta_time = @floatFromInt((hooks.current_frame_time - hooks.last_frame_time));
+            hooks.delta_time *= CONVERT;
+            hooks.last_frame_time = hooks.current_frame_time;
 
             var event: EventTy = undefined;
             while (sdl.SDL_PollEvent(&event)) {

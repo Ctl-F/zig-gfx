@@ -185,7 +185,7 @@ pub fn main() !void {
 
     while (context.running) {
         @memcpy(context.input.lastFrame[0..context.input.lastFrame.len], context.input.currentFrame[0..context.input.currentFrame.len]);
-        try EventHooks.PollEvents(eventHooks, &context);
+        try EventHooks.PollEvents(&eventHooks, &context);
 
         gl.glClearColor(0.0, 0.0, 0.01, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT);
@@ -250,7 +250,7 @@ fn initialize_input(ctx: *Context) void {
     }
 }
 
-fn process_player_move(ctx: *Context) void {
+fn process_player_move(ctx: *Context, dt: f64) void {
     const iForward: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Forward))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Back)]));
     const iRight: i32 = @intFromBool(ctx.input.currentFrame[@as(i32, @intFromEnum(InputContext.Buttons.Right))]) - @as(i32, @intFromBool(ctx.input.currentFrame[@intFromEnum(InputContext.Buttons.Left)]));
 
@@ -265,7 +265,7 @@ fn process_player_move(ctx: *Context) void {
     velocity[1] = 0;
     velocity = vmt.normalize(velocity) * @as(vmt.vec3, @splat(ctx.settings.player_speed));
 
-    ctx.player.position += velocity;
+    ctx.player.position += velocity * 10.0 * dt;
 }
 
 fn on_key_released(event: gfx.EventTy, context: ?*Context) EventErrors!void {
