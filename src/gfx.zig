@@ -900,6 +900,36 @@ pub fn LoadBinaryFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return buffer;
 }
 
+pub Timer = struct {
+    reference_time_ns: u64,
+    initial_time_ns: u64,
+
+    const NS_TO_SECONDS = 1.0 / 1e9;
+    const MS_TO_SECONDS = 1.0 / 1e6;
+    const NS_TO_MS = 1.0 / 1e3;
+
+    pub fn Now() Timer {
+        const time: u64 = sdl.SDL_GetTicksNS();
+        return Timer {
+            .reference_time_ns = time,
+            .initial_time_ns = time,
+        };
+    }
+    
+    /// returns the elapsed nanoseconds since the last
+    /// call to elapsed* function or creation, whichever is most recent.
+    pub fn elapsed(self: *Timer) u64 {
+        const now: u64 = sdl.SDL_GetTicksNS();
+        const delta = now - self.reference_time_ns;
+        self.reference_time_ns = now;
+        return delta;
+    }
+
+    pub fn elapsed_ms(self: *Timer) u64 {
+        const now: u64 = sdl.SDL_GetTicksNS();
+    }
+};
+
 //--------------------------------------------
 // INPUT
 //--------------------------------------------
@@ -931,13 +961,6 @@ pub fn CreateEventHooks(comptime ctx_t: type, comptime err: type) type {
                     @compileError("Expected error set as parameter, 'err' parameter is not an errorset.");
                 }
             }
-
-            const CONVERT: f64 = 1 / 1e9;
-
-            hooks.current_frame_time = sdl.SDL_GetTicksNS();
-            hooks.delta_time = @floatFromInt((hooks.current_frame_time - hooks.last_frame_time));
-            hooks.delta_time *= CONVERT;
-            hooks.last_frame_time = hooks.current_frame_time;
 
             var event: EventTy = undefined;
             while (sdl.SDL_PollEvent(&event)) {
