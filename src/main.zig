@@ -48,7 +48,7 @@ const Transformation = struct {
     position: vmt.vec3,
 };
 
-const registry = ecs.DefineRegistry(&[_]type{Transformation}, &[_]u64{100});
+const Registry = ecs.DefineRegistry(&[_]type{Transformation}, &[_]u64{100}, "main");
 
 const InputContext = struct {
     currentFrame: [@intFromEnum(Buttons.ENDINDEX)]bool = undefined,
@@ -84,10 +84,10 @@ const EventHooksType = EventHooks.EventHooks;
 pub fn main() !void {
     gfx.ShowSDLErrors = true;
 
-    const info = @typeInfo(@TypeOf(registry));
-    const fields = switch (info) {
+    const info = @typeInfo(Registry);
+    const fields: []const std.builtin.Type.StructField = switch (info) {
         .@"struct" => |*str| str.fields,
-        else => .{},
+        else => &[_]std.builtin.Type.StructField{},
     };
 
     if (fields.len == 0) {
@@ -96,13 +96,18 @@ pub fn main() !void {
 
     var stdout = std.io.getStdOut().writer();
 
-    for (fields) |field| {
+    inline for (fields) |field| {
         try stdout.print("Field name: {s}\n", .{field.name});
     }
 
-    //std.debug.print("{}\n", .{registry});
-    //registry.@"main.Transformation"[0] = Transformation{ .position = vmt.vec3{ 0, -10, 0 } };
-    //std.debug.print("{}\n", .{registry.@"main.Transformation"[0]});
+    std.debug.print("{}\n", .{Registry});
+
+    var registry = Registry{
+        .Transformation = undefined,
+    };
+
+    registry.Transformation[0] = Transformation{ .position = vmt.vec3{ 0, -10, 0 } };
+    std.debug.print("{}\n", .{registry.Transformation[0]});
 
     const params = gfx.InitParams{
         .title = "Hello OpenGL",
