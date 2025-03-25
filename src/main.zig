@@ -102,12 +102,12 @@ pub fn main() !void {
 
     std.debug.print("{}\n", .{Registry});
 
-    var registry = Registry{
-        .Transformation = undefined,
-    };
+    //var registry = Registry{
+    //    .Transformation = undefined,
+    //};
 
-    registry.Transformation[0] = Transformation{ .position = vmt.vec3{ 0, -10, 0 } };
-    std.debug.print("{}\n", .{registry.Transformation[0]});
+    //registry.Transformation[0] = Transformation{ .position = vmt.vec3{ 0, -10, 0 } };
+    //std.debug.print("{}\n", .{registry.Transformation[0]});
 
     const params = gfx.InitParams{
         .title = "Hello OpenGL",
