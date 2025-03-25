@@ -77,11 +77,20 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
+    const voxel_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/world.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+
+    const run_voxel_unit_tests = b.addRunArtifact(voxel_unit_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_voxel_unit_tests.step);
 }
