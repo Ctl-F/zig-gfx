@@ -2,6 +2,7 @@ const std = @import("std");
 const gfx = @import("gfx.zig");
 const vmt = @import("vmath.zig");
 const ecs = @import("ecs.zig");
+const util = @import("util.zig");
 
 const gl = gfx.gl;
 const sdl = gfx.sdl;
@@ -53,9 +54,9 @@ const Transformation = struct {
 const RegistryType = ecs.GenerateRegistry(&.{
     .{ .component_t = Transformation, .table_length = 100 },
 }, "main");
-const EntityType = ecs.CreateEntityType(RegistryType, &.{
-    Transformation,
-}, "main");
+// const EntityType = RegistryType.CreateEntityType(RegistryType, &.{
+//     Transformation,
+// }, "main");
 
 const InputContext = struct {
     currentFrame: [@intFromEnum(Buttons.ENDINDEX)]bool = undefined,
@@ -91,30 +92,24 @@ const EventHooksType = EventHooks.EventHooks;
 pub fn main() !void {
     gfx.ShowSDLErrors = true;
 
-    const info = @typeInfo(RegistryType);
-    const fields: []const std.builtin.Type.StructField = switch (info) {
-        .@"struct" => |*str| str.fields,
-        else => &[_]std.builtin.Type.StructField{},
+    util.debug_print_struct_fields(RegistryType);
+
+    var registry = RegistryType{
+        .tables = undefined,
     };
 
-    if (fields.len == 0) {
-        std.debug.print("info: {}\n", .{info});
-    }
+    const EntityType = RegistryType.CreateEntityType(&.{Transformation});
 
-    var stdout = std.io.getStdOut().writer();
+    util.debug_print_struct_fields(EntityType);
 
-    inline for (fields) |field| {
-        try stdout.print("Field name: {s}\n", .{field.name});
-    }
+    var entity = EntityType{
+        .components = undefined,
+    };
 
-    std.debug.print("{}\n{}\n", .{ RegistryType, EntityType });
-
-    //var registry = Registry{
-    //    .Transformation = undefined,
-    //};
-
-    //registry.Transformation[0] = Transformation{ .position = vmt.vec3{ 0, -10, 0 } };
-    //std.debug.print("{}\n", .{registry.Transformation[0]});
+    registry.tables.Transformations[0] = Transformation{
+        .position = vmt.vec3{ 0, 0, 0 },
+    };
+    entity.components.Transformation = 0;
 
     const params = gfx.InitParams{
         .title = "Hello OpenGL",

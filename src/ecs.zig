@@ -19,18 +19,18 @@ pub const ComponentInfo = struct {
     table_length: comptime_int,
 };
 
-pub fn GenerateRegistry(comptime components: []ComponentInfo, comptime mod_name: []const u8) type {
+pub fn GenerateRegistry(comptime components: []const ComponentInfo, comptime mod_name: []const u8) type {
     comptime var _Tables: [components.len]std.builtin.Type.StructField = undefined;
 
     inline for (components, 0..) |component, i| {
         //const componentInfo = @typeInfo(component.component_t);
-        const table_name = @typeName(component)[mod_name.len + 1 ..];
+        const table_name = @typeName(component.component_t)[mod_name.len + 1 ..];
         _Tables[i] = .{
-            .name = table_name ++ "_Table",
-            .type = [component.table_length]component,
+            .name = table_name ++ "s",
+            .type = [component.table_length]component.component_t,
             .default_value_ptr = null,
             .is_comptime = false,
-            .alignment = @alignOf(component),
+            .alignment = @alignOf(component.component_t),
         };
     }
 
@@ -44,64 +44,68 @@ pub fn GenerateRegistry(comptime components: []ComponentInfo, comptime mod_name:
     });
 
     return struct {
+        const Self = @This();
         tables: TablesCollection,
+
+        pub fn CreateEntityType(comptime entity_components: []const type) type {
+            comptime {
+                const registryInfo = @typeInfo(@This());
+
+                for (entity_components) |component| {
+                    var found: bool = false;
+
+                    switch (registryInfo) {
+                        .@"struct" => |ri| {
+                            for (switch (@typeInfo(ri.fields[0].type)) {
+                                .@"struct" => |rr| rr.fields,
+                                else => unreachable,
+                            }) |field| {
+                                if (is_same_base_type(field.type, component)) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        },
+                        else => @compileError("Registry needs to be a generated registry type."),
+                    }
+
+                    if (!found) {
+                        @compileError("Component type specified was not found in the registry");
+                    }
+                }
+
+                var fields: [entity_components.len]std.builtin.Type.StructField = undefined;
+                for (entity_components, 0..) |comp_t, i| {
+                    const field_name = @typeName(comp_t)[mod_name.len + 1 ..];
+                    fields[i] = .{
+                        .name = field_name,
+                        .type = table_key,
+                        .default_value_ptr = null,
+                        .is_comptime = false,
+                        .alignment = @alignOf(table_key),
+                    };
+                }
+
+                const entity_type = @Type(std.builtin.Type{
+                    .@"struct" = .{
+                        .layout = std.builtin.Type.ContainerLayout.auto,
+                        .fields = &fields,
+                        .decls = &.{},
+                        .is_tuple = false,
+                    },
+                });
+
+                return struct {
+                    components: entity_type,
+                };
+            }
+        }
     };
 }
 
 fn is_same_base_type(comptime fieldType: type, comptime baseType: type) bool {
     return fieldType == baseType or
         (@typeInfo(fieldType) == .array and @typeInfo(fieldType).array.child == baseType);
-}
-
-pub fn CreateEntityType(comptime registry: type, comptime components: []type, comptime mod_name: []const u8) type {
-    comptime {
-        const registryInfo = @typeInfo(registry);
-
-        for (components) |component| {
-            var found: bool = false;
-
-            switch (registryInfo) {
-                .@"struct" => |ri| {
-                    for (ri.fields) |field| {
-                        if (is_same_base_type(field, component)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                },
-                else => @compileError("Registry needs to be a generated registry type."),
-            }
-
-            if (!found) {
-                @compileError("Component type specified was not found in the registry");
-            }
-        }
-
-        const fields: [components.len]std.builtin.Type.StructField = undefined;
-        for (components, 0..) |comp_t, i| {
-            const field_name = @typeName(comp_t)[mod_name.len + 1 ..];
-            fields[i] = .{
-                .name = field_name,
-                .type = table_key,
-                .default_value_ptr = null,
-                .is_comptime = false,
-                .alignment = @alignOf(table_key),
-            };
-        }
-
-        const entity_type = @Type(std.builtin.Type{
-            .@"struct" = .{
-                .layout = std.builtin.Type.ContainerLayout.auto,
-                .fields = &fields,
-                .decls = &.{},
-                .is_tuple = false,
-            },
-        });
-
-        return struct {
-            components: entity_type,
-        };
-    }
 }
 
 // pub const Collider = union(enum) {
