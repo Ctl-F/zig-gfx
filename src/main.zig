@@ -48,7 +48,14 @@ const Transformation = struct {
     position: vmt.vec3,
 };
 
-const Registry = ecs.DefineRegistry(&[_]type{Transformation}, &[_]u64{100}, "main");
+//const Registry = ecs.DefineRegistry(&[_]type{Transformation}, &[_]u64{100}, "main");
+
+const RegistryType = ecs.GenerateRegistry(&.{
+    .{ .component_t = Transformation, .table_length = 100 },
+}, "main");
+const EntityType = ecs.CreateEntityType(RegistryType, &.{
+    Transformation,
+}, "main");
 
 const InputContext = struct {
     currentFrame: [@intFromEnum(Buttons.ENDINDEX)]bool = undefined,
@@ -84,7 +91,7 @@ const EventHooksType = EventHooks.EventHooks;
 pub fn main() !void {
     gfx.ShowSDLErrors = true;
 
-    const info = @typeInfo(Registry);
+    const info = @typeInfo(RegistryType);
     const fields: []const std.builtin.Type.StructField = switch (info) {
         .@"struct" => |*str| str.fields,
         else => &[_]std.builtin.Type.StructField{},
@@ -100,7 +107,7 @@ pub fn main() !void {
         try stdout.print("Field name: {s}\n", .{field.name});
     }
 
-    std.debug.print("{}\n", .{Registry});
+    std.debug.print("{}\n{}\n", .{ RegistryType, EntityType });
 
     //var registry = Registry{
     //    .Transformation = undefined,
