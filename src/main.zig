@@ -45,19 +45,6 @@ const Settings = struct {
     player_speed: f32,
 };
 
-const Transformation = struct {
-    position: vmt.vec3,
-};
-
-//const Registry = ecs.DefineRegistry(&[_]type{Transformation}, &[_]u64{100}, "main");
-
-const RegistryType = ecs.GenerateRegistry(&.{
-    .{ .component_t = Transformation, .table_length = 100 },
-}, "main");
-// const EntityType = RegistryType.CreateEntityType(RegistryType, &.{
-//     Transformation,
-// }, "main");
-
 const InputContext = struct {
     currentFrame: [@intFromEnum(Buttons.ENDINDEX)]bool = undefined,
     lastFrame: [@intFromEnum(Buttons.ENDINDEX)]bool = undefined,
@@ -91,25 +78,6 @@ const EventHooksType = EventHooks.EventHooks;
 
 pub fn main() !void {
     gfx.ShowSDLErrors = true;
-
-    util.debug_print_struct_fields(RegistryType);
-
-    var registry = RegistryType{
-        .tables = undefined,
-    };
-
-    const EntityType = RegistryType.CreateEntityType(&.{Transformation});
-
-    util.debug_print_struct_fields(EntityType);
-
-    var entity = EntityType{
-        .components = undefined,
-    };
-
-    registry.tables.Transformations[0] = Transformation{
-        .position = vmt.vec3{ 0, 0, 0 },
-    };
-    entity.components.Transformation = 0;
 
     const params = gfx.InitParams{
         .title = "Hello OpenGL",
