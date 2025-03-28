@@ -11,33 +11,33 @@ const EventErrors = error{
     NullContext,
 };
 
-const Camera = struct {
-    position: vmt.vec3,
-    eye_offset: vmt.vec3,
-    orientation: vmt.quat,
-    fov: f32 = std.math.pi / 2.0,
-    zNear: f32 = 0.01,
-    zFar: f32 = 1000.0,
+// const Camera = struct {
+//     position: vmt.vec3,
+//     eye_offset: vmt.vec3,
+//     orientation: vmt.quat,
+//     fov: f32 = std.math.pi / 2.0,
+//     zNear: f32 = 0.01,
+//     zFar: f32 = 1000.0,
 
-    pub fn get_perspective(self: Camera, aspect: f32) vmt.mat4 {
-        return vmt.mat4.createPerspective(self.fov, aspect, self.zNear, self.zFar);
-    }
-    pub fn get_view(self: Camera) vmt.mat4 {
-        // How to get look direction
-        const forward = self.get_forward();
-        const eye = self.position + self.eye_offset;
-        const center = eye + forward;
-        return vmt.mat4.createLookAt(eye, center, vmt.vec3{ 0, 1, 0 });
-    }
+//     pub fn get_perspective(self: Camera, aspect: f32) vmt.mat4 {
+//         return vmt.mat4.createPerspective(self.fov, aspect, self.zNear, self.zFar);
+//     }
+//     pub fn get_view(self: Camera) vmt.mat4 {
+//         // How to get look direction
+//         const forward = self.get_forward();
+//         const eye = self.position + self.eye_offset;
+//         const center = eye + forward;
+//         return vmt.mat4.createLookAt(eye, center, vmt.vec3{ 0, 1, 0 });
+//     }
 
-    pub fn get_forward(self: Camera) vmt.vec3 {
-        return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 0, 0, -1 });
-    }
+//     pub fn get_forward(self: Camera) vmt.vec3 {
+//         return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 0, 0, -1 });
+//     }
 
-    pub fn get_right(self: Camera) vmt.vec3 {
-        return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 1, 0, 0 });
-    }
-};
+//     pub fn get_right(self: Camera) vmt.vec3 {
+//         return vmt.quat.rotate_vec3(self.orientation, vmt.vec3{ 1, 0, 0 });
+//     }
+// };
 
 const Settings = struct {
     camera_sensitivity: f32,
@@ -64,8 +64,9 @@ const InputContext = struct {
 const Context = struct {
     running: bool,
     delta_time: f64,
-    player: Camera,
+    registry: ecs.Registry,
     input: InputContext = InputContext{},
+    player: ecs.EntityID,
     settings: Settings = Settings{
         .camera_sensitivity = 0.01,
         .camera_smoothing = 0.2,
@@ -79,6 +80,8 @@ const EventHooksType = EventHooks.EventHooks;
 pub fn main() !void {
     gfx.ShowSDLErrors = true;
 
+    const allocator = std.heap.ArenaAllocator.init(std.heap.PageAllocator);
+
     const params = gfx.InitParams{
         .title = "Hello OpenGL",
         .width = 800,
@@ -88,15 +91,31 @@ pub fn main() !void {
     try gfx.Init(params);
     defer gfx.Quit();
 
-    var context = Context{
-        .running = true,
-        .delta_time = 0.0,
-        .player = Camera{
-            .position = @splat(0.0),
-            .eye_offset = vmt.vec3{ 0, 1, 0 },
-            .orientation = vmt.quat.identity,
-        },
-    };
+    var context = Context{ .running = true, .delta_time = 0.0, .registry = ecs.Registry.init(&allocator) };
+    defer context.registry.deinit();
+
+    context.player = try context.registry.create_entity();
+
+    {
+        var entity = try context.registry.get_entity(context.player);
+
+        var camera = try entity.component(ecs.CompCamera);
+        var position = try entity.component(ecs.CompBody);
+
+        switch (camera) {
+            .camera => |*cam| {
+                cam.eye_position = vmt.vec3{ 0, 10, 0 };
+            },
+            else => unreachable,
+        }
+        switch (position) {
+            .body => |*bod| {
+                bod.position = vmt.vec3{ 0, 0, 0 };
+                bod.velocity = vmt.vec3{ 0, 0, 0 };
+            },
+            else => unreachable,
+        }
+    }
 
     var vfmt = gfx.VertexFormatBuffer{};
     try vfmt.add_attribute(gfx.VertexType.Float3); // position
@@ -272,7 +291,21 @@ fn process_player_move(ctx: *Context) void {
     velocity[1] = 0;
     velocity = vmt.normalize(velocity) * @as(vmt.vec3, @splat(ctx.settings.player_speed * delta_time));
 
-    ctx.player.position += velocity;
+    var entt = try ctx.registry.get_entity(ctx.player);
+    switch (try entt.get_component(ecs.CompBody)) {
+        .body => |*bod| bod.velocity = velocity,
+        else => unreachable,
+    }
+
+    //ctx.player.position += velocity;
+}
+
+fn process_body(body: *ecs.Entity) anyerror!void {
+    var body_comp = try body.get_component(ecs.CompBody);
+    switch (body_comp) {
+        .body => |*bod| bod.position += bod.velocity,
+        else => unreachable,
+    }
 }
 
 fn on_key_released(event: gfx.EventTy, context: ?*Context) EventErrors!void {
